@@ -14,13 +14,19 @@ const i18n = {
     language: '언어',
     themeDark: '다크',
     themeLight: '라이트',
+    sidebarTitle: '지원 기능',
+    featureViewer: '파일/텍스트 Viewer',
+    featureEncode: 'Encode/Decode',
+    featureSync: '폴더 동기화',
     tabViewer: 'Viewer',
     tabEncode: 'Encode/Decode',
     tabSync: 'Sync',
     viewerTitle: '파일 Viewer (diff / json / md)',
+    viewerInputTitle: '직접 입력',
+    viewerDiffTitle: 'Diff 미리보기',
+    viewerJsonTitle: 'JSON 미리보기',
+    viewerMarkdownTitle: 'Markdown 미리보기',
     openFile: '파일 열기',
-    raw: '원본',
-    rendered: '표시 결과',
     encodeTitle: '인코드/디코드',
     mode: '모드',
     encode: '인코드',
@@ -32,24 +38,31 @@ const i18n = {
     runSync: '동기화 실행',
     source: '소스',
     target: '타겟',
-    pick: '선택',
     delete: '삭제',
-    chooseSourceFirst: '먼저 소스 폴더를 선택하세요.',
-    chooseTargetFirst: '먼저 타겟 폴더를 선택하세요.',
     noJobs: '등록된 동기화 작업이 없습니다.',
-    decodeError: '디코드 중 오류가 발생했습니다.'
+    decodeError: '디코드 중 오류가 발생했습니다.',
+    invalidJson: '유효한 JSON이 아닙니다.',
+    markdownHint: 'Markdown 원문 미리보기입니다.',
+    emptyDiff: '비교할 내용이 없습니다.',
+    diffSame: '변경점이 없습니다.'
   },
   en: {
     language: 'Language',
     themeDark: 'Dark',
     themeLight: 'Light',
+    sidebarTitle: 'Supported Features',
+    featureViewer: 'File/Text Viewer',
+    featureEncode: 'Encode/Decode',
+    featureSync: 'Folder Sync',
     tabViewer: 'Viewer',
     tabEncode: 'Encode/Decode',
     tabSync: 'Sync',
     viewerTitle: 'File Viewer (diff / json / md)',
+    viewerInputTitle: 'Direct Input',
+    viewerDiffTitle: 'Diff Preview',
+    viewerJsonTitle: 'JSON Preview',
+    viewerMarkdownTitle: 'Markdown Preview',
     openFile: 'Open File',
-    raw: 'Raw',
-    rendered: 'Rendered',
     encodeTitle: 'Encode/Decode',
     mode: 'Mode',
     encode: 'Encode',
@@ -61,12 +74,13 @@ const i18n = {
     runSync: 'Run Sync',
     source: 'Source',
     target: 'Target',
-    pick: 'Pick',
     delete: 'Delete',
-    chooseSourceFirst: 'Pick the source folder first.',
-    chooseTargetFirst: 'Pick the target folder first.',
     noJobs: 'No sync jobs.',
-    decodeError: 'Decode failed.'
+    decodeError: 'Decode failed.',
+    invalidJson: 'This is not valid JSON.',
+    markdownHint: 'Previewing markdown source text.',
+    emptyDiff: 'No content to compare.',
+    diffSame: 'No changes detected.'
   }
 };
 
@@ -81,15 +95,58 @@ function setTheme(theme) {
   document.getElementById('themeToggle').textContent = theme === 'light' ? t('themeDark') : t('themeLight');
 }
 
+function createDiffView(content) {
+  const lines = content.split('\n');
+  if (content.trim().length === 0) {
+    return t('emptyDiff');
+  }
+
+  const hasDiff = lines.some((line) => line.startsWith('+') || line.startsWith('-'));
+  if (!hasDiff) {
+    return `${t('diffSame')}\n\n${content}`;
+  }
+
+  return lines
+    .map((line) => {
+      if (line.startsWith('+')) {
+        return `[+] ${line.slice(1)}`;
+      }
+      if (line.startsWith('-')) {
+        return `[-] ${line.slice(1)}`;
+      }
+      return `    ${line}`;
+    })
+    .join('\n');
+}
+
+function renderViewerOutputs(content) {
+  document.getElementById('diffContent').textContent = createDiffView(content);
+
+  try {
+    const json = JSON.parse(content);
+    document.getElementById('jsonContent').textContent = JSON.stringify(json, null, 2);
+  } catch {
+    document.getElementById('jsonContent').textContent = t('invalidJson');
+  }
+
+  document.getElementById('markdownContent').textContent = `${t('markdownHint')}\n\n${content}`;
+}
+
 function applyI18n() {
   document.getElementById('languageLabel').textContent = t('language');
+  document.getElementById('sidebarTitle').textContent = t('sidebarTitle');
+  document.getElementById('featureViewer').textContent = t('featureViewer');
+  document.getElementById('featureEncode').textContent = t('featureEncode');
+  document.getElementById('featureSync').textContent = t('featureSync');
   document.getElementById('tabViewer').textContent = t('tabViewer');
   document.getElementById('tabEncode').textContent = t('tabEncode');
   document.getElementById('tabSync').textContent = t('tabSync');
   document.getElementById('viewerTitle').textContent = t('viewerTitle');
+  document.getElementById('viewerInputTitle').textContent = t('viewerInputTitle');
+  document.getElementById('viewerDiffTitle').textContent = t('viewerDiffTitle');
+  document.getElementById('viewerJsonTitle').textContent = t('viewerJsonTitle');
+  document.getElementById('viewerMarkdownTitle').textContent = t('viewerMarkdownTitle');
   document.getElementById('openFileBtn').textContent = t('openFile');
-  document.getElementById('viewerRawTitle').textContent = t('raw');
-  document.getElementById('viewerRenderedTitle').textContent = t('rendered');
   document.getElementById('encodeTitle').textContent = t('encodeTitle');
   document.getElementById('encodingLabel').textContent = t('mode');
   document.getElementById('encodeBtn').textContent = t('encode');
@@ -99,6 +156,7 @@ function applyI18n() {
   document.getElementById('syncTitle').textContent = t('syncTitle');
   document.getElementById('addSyncBtn').textContent = t('addSync');
   document.getElementById('runSyncBtn').textContent = t('runSync');
+  renderViewerOutputs(document.getElementById('rawContent').value);
   setTheme(state.theme);
   renderSyncJobs();
 }
@@ -112,27 +170,8 @@ function persistInputs() {
   localStorage.setItem('lastEncodingMode', document.getElementById('encodingMode').value);
 }
 
-function renderFile(ext, content) {
-  if (ext === '.json') {
-    try {
-      return JSON.stringify(JSON.parse(content), null, 2);
-    } catch {
-      return content;
-    }
-  }
-
-  if (ext === '.md') {
-    return content
-      .replace(/^### (.*)$/gm, '### $1')
-      .replace(/^## (.*)$/gm, '## $1')
-      .replace(/^# (.*)$/gm, '# $1');
-  }
-
-  return content;
-}
-
 function setupTabs() {
-  const tabs = Array.from(document.querySelectorAll('.tab'));
+  const tabs = Array.from(document.querySelectorAll('.tab, .feature-link'));
   const panels = {
     viewer: document.getElementById('viewerPanel'),
     encode: document.getElementById('encodePanel'),
@@ -141,10 +180,11 @@ function setupTabs() {
 
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
-      tabs.forEach((other) => other.classList.remove('active'));
-      tab.classList.add('active');
-      Object.values(panels).forEach((panel) => panel.classList.remove('active'));
-      panels[tab.dataset.tab].classList.add('active');
+      document.querySelectorAll('.tab').forEach((button) => button.classList.toggle('active', button.dataset.tab === tab.dataset.tab));
+      document.querySelectorAll('.feature-link').forEach((button) => button.classList.toggle('active', button.dataset.tab === tab.dataset.tab));
+      Object.entries(panels).forEach(([key, panel]) => {
+        panel.classList.toggle('active', key === tab.dataset.tab);
+      });
     });
   });
 }
@@ -212,7 +252,7 @@ async function bootstrap() {
   document.getElementById('encodingMode').value = state.lastEncodingMode;
   document.getElementById('openedFilePath').textContent = state.lastViewerPath;
   document.getElementById('rawContent').value = state.lastViewerRaw;
-  document.getElementById('renderedContent').textContent = renderFile('', state.lastViewerRaw);
+  renderViewerOutputs(state.lastViewerRaw);
   document.getElementById('encodeInput').value = state.lastEncodeInput;
   document.getElementById('encodeOutput').value = state.lastEncodeOutput;
 
@@ -241,7 +281,13 @@ async function bootstrap() {
 
     document.getElementById('openedFilePath').textContent = fileData.path;
     document.getElementById('rawContent').value = fileData.content;
-    document.getElementById('renderedContent').textContent = renderFile(fileData.path.slice(fileData.path.lastIndexOf('.')), fileData.content);
+    renderViewerOutputs(fileData.content);
+    persistInputs();
+  });
+
+  document.getElementById('rawContent').addEventListener('input', () => {
+    const content = document.getElementById('rawContent').value;
+    renderViewerOutputs(content);
     persistInputs();
   });
 
