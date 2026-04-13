@@ -21,62 +21,87 @@
       </div>
     </header>
 
-    <main class="layout">
-      <nav class="tabs">
-        <button class="tab active" data-tab="viewer" id="tabViewer"></button>
-        <button class="tab" data-tab="encode" id="tabEncode"></button>
-        <button class="tab" data-tab="sync" id="tabSync"></button>
-      </nav>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <h2 id="sidebarTitle"></h2>
+        <ul class="feature-list">
+          <li>
+            <button class="feature-link" data-tab="viewer" id="featureViewer"></button>
+          </li>
+          <li>
+            <button class="feature-link" data-tab="encode" id="featureEncode"></button>
+          </li>
+          <li>
+            <button class="feature-link" data-tab="sync" id="featureSync"></button>
+          </li>
+        </ul>
+      </aside>
 
-      <section class="panel active" id="viewerPanel">
-        <h2 id="viewerTitle"></h2>
-        <div class="row">
-          <button id="openFileBtn"></button>
-          <span id="openedFilePath" class="muted"></span>
-        </div>
-        <div class="viewer-grid">
-          <article>
-            <h3 id="viewerRawTitle"></h3>
-            <textarea id="rawContent" readonly></textarea>
-          </article>
-          <article>
-            <h3 id="viewerRenderedTitle"></h3>
-            <pre id="renderedContent"></pre>
-          </article>
-        </div>
-      </section>
+      <section class="layout">
+        <nav class="tabs">
+          <button class="tab active" data-tab="viewer" id="tabViewer"></button>
+          <button class="tab" data-tab="encode" id="tabEncode"></button>
+          <button class="tab" data-tab="sync" id="tabSync"></button>
+        </nav>
 
-      <section class="panel" id="encodePanel">
-        <h2 id="encodeTitle"></h2>
-        <div class="row">
-          <label id="encodingLabel" for="encodingMode"></label>
-          <select id="encodingMode">
-            <option value="base64">Base64</option>
-            <option value="url">URL Encoding</option>
-          </select>
-          <button id="encodeBtn"></button>
-          <button id="decodeBtn"></button>
-        </div>
-        <div class="viewer-grid">
-          <article>
-            <h3 id="inputTitle"></h3>
-            <textarea id="encodeInput"></textarea>
+        <section class="panel active" id="viewerPanel">
+          <h2 id="viewerTitle"></h2>
+          <div class="row">
+            <button id="openFileBtn"></button>
+            <span id="openedFilePath" class="muted"></span>
+          </div>
+          <article class="input-card">
+            <h3 id="viewerInputTitle"></h3>
+            <textarea id="rawContent"></textarea>
           </article>
-          <article>
-            <h3 id="outputTitle"></h3>
-            <textarea id="encodeOutput" readonly></textarea>
-          </article>
-        </div>
-      </section>
+          <div class="multi-output-grid">
+            <article>
+              <h3 id="viewerDiffTitle"></h3>
+              <pre id="diffContent"></pre>
+            </article>
+            <article>
+              <h3 id="viewerJsonTitle"></h3>
+              <pre id="jsonContent"></pre>
+            </article>
+            <article>
+              <h3 id="viewerMarkdownTitle"></h3>
+              <pre id="markdownContent"></pre>
+            </article>
+          </div>
+        </section>
 
-      <section class="panel" id="syncPanel">
-        <h2 id="syncTitle"></h2>
-        <div class="row">
-          <button id="addSyncBtn"></button>
-          <button id="runSyncBtn"></button>
-        </div>
-        <div id="syncJobs"></div>
-        <pre id="syncResult" class="sync-result"></pre>
+        <section class="panel" id="encodePanel">
+          <h2 id="encodeTitle"></h2>
+          <div class="row">
+            <label id="encodingLabel" for="encodingMode"></label>
+            <select id="encodingMode">
+              <option value="base64">Base64</option>
+              <option value="url">URL Encoding</option>
+            </select>
+            <button id="encodeBtn"></button>
+            <button id="decodeBtn"></button>
+          </div>
+          <div class="viewer-grid">
+            <article>
+              <h3 id="inputTitle"></h3>
+              <textarea id="encodeInput"></textarea>
+            </article>
+            <article>
+              <h3 id="outputTitle"></h3>
+              <textarea id="encodeOutput" readonly></textarea>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel" id="syncPanel">
+          <h2 id="syncTitle"></h2>
+          <div class="row">
+            <button id="addSyncBtn"></button>
+            <button id="runSyncBtn"></button>
+          </div>
+          <div id="syncJobs"></div>
+          <pre id="syncResult" class="sync-result"></pre>
+        </section>
       </section>
     </main>
 
