@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MyTool</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>MyTool</h1>
+      <div class="topbar-controls">
+        <label>
+          <span id="languageLabel">언어</span>
+          <select id="languageSelect">
+            <option value="ko">한국어</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <button id="themeToggle"></button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <nav class="tabs">
+        <button class="tab active" data-tab="viewer" id="tabViewer"></button>
+        <button class="tab" data-tab="encode" id="tabEncode"></button>
+        <button class="tab" data-tab="sync" id="tabSync"></button>
+      </nav>
+
+      <section class="panel active" id="viewerPanel">
+        <h2 id="viewerTitle"></h2>
+        <div class="row">
+          <button id="openFileBtn"></button>
+          <span id="openedFilePath" class="muted"></span>
+        </div>
+        <div class="viewer-grid">
+          <article>
+            <h3 id="viewerRawTitle"></h3>
+            <textarea id="rawContent" readonly></textarea>
+          </article>
+          <article>
+            <h3 id="viewerRenderedTitle"></h3>
+            <pre id="renderedContent"></pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel" id="encodePanel">
+        <h2 id="encodeTitle"></h2>
+        <div class="row">
+          <label id="encodingLabel" for="encodingMode"></label>
+          <select id="encodingMode">
+            <option value="base64">Base64</option>
+            <option value="url">URL Encoding</option>
+          </select>
+          <button id="encodeBtn"></button>
+          <button id="decodeBtn"></button>
+        </div>
+        <div class="viewer-grid">
+          <article>
+            <h3 id="inputTitle"></h3>
+            <textarea id="encodeInput"></textarea>
+          </article>
+          <article>
+            <h3 id="outputTitle"></h3>
+            <textarea id="encodeOutput" readonly></textarea>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel" id="syncPanel">
+        <h2 id="syncTitle"></h2>
+        <div class="row">
+          <button id="addSyncBtn"></button>
+          <button id="runSyncBtn"></button>
+        </div>
+        <div id="syncJobs"></div>
+        <pre id="syncResult" class="sync-result"></pre>
+      </section>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
