@@ -1,0 +1,13 @@
+{
+  "name": "mytool",
+  "version": "1.0.0",
+  "description": "Portable Electron utility viewer/encoder/sync tool",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}
