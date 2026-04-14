@@ -3,7 +3,10 @@ const state = {
   theme: localStorage.getItem('theme') || 'dark',
   syncJobs: [],
   lastViewerPath: localStorage.getItem('lastViewerPath') || '',
-  lastViewerRaw: localStorage.getItem('lastViewerRaw') || '',
+  lastDiffInputA: localStorage.getItem('lastDiffInputA') || '',
+  lastDiffInputB: localStorage.getItem('lastDiffInputB') || '',
+  lastJsonInput: localStorage.getItem('lastJsonInput') || '',
+  lastMarkdownInput: localStorage.getItem('lastMarkdownInput') || '',
   lastEncodeInput: localStorage.getItem('lastEncodeInput') || '',
   lastEncodeOutput: localStorage.getItem('lastEncodeOutput') || '',
   lastEncodingMode: localStorage.getItem('lastEncodingMode') || 'base64'
@@ -14,13 +17,26 @@ const i18n = {
     language: '언어',
     themeDark: '다크',
     themeLight: '라이트',
+    sidebarTitle: '지원 기능',
+    featureViewer: '파일/텍스트 Viewer',
+    featureEncode: 'Encode/Decode',
+    featureSync: '폴더 동기화',
     tabViewer: 'Viewer',
     tabEncode: 'Encode/Decode',
     tabSync: 'Sync',
     viewerTitle: '파일 Viewer (diff / json / md)',
+    viewerDiffTitle: 'Diff 비교 (입력 2개)',
+    viewerJsonTitle: 'JSON Pretty',
+    viewerMarkdownTitle: 'Markdown Preview',
     openFile: '파일 열기',
-    raw: '원본',
-    rendered: '표시 결과',
+    diffInputA: '원본(A)',
+    diffInputB: '비교(B)',
+    jsonInput: 'JSON 입력',
+    markdownInput: 'Markdown 입력',
+    diffEmpty: '비교할 텍스트를 입력하세요.',
+    diffSame: '차이점이 없습니다.',
+    jsonInvalid: '유효한 JSON이 아닙니다.',
+    mdHint: 'Markdown 미리보기가 여기에 표시됩니다.',
     encodeTitle: '인코드/디코드',
     mode: '모드',
     encode: '인코드',
@@ -32,10 +48,7 @@ const i18n = {
     runSync: '동기화 실행',
     source: '소스',
     target: '타겟',
-    pick: '선택',
     delete: '삭제',
-    chooseSourceFirst: '먼저 소스 폴더를 선택하세요.',
-    chooseTargetFirst: '먼저 타겟 폴더를 선택하세요.',
     noJobs: '등록된 동기화 작업이 없습니다.',
     decodeError: '디코드 중 오류가 발생했습니다.'
   },
@@ -43,13 +56,26 @@ const i18n = {
     language: 'Language',
     themeDark: 'Dark',
     themeLight: 'Light',
+    sidebarTitle: 'Supported Features',
+    featureViewer: 'File/Text Viewer',
+    featureEncode: 'Encode/Decode',
+    featureSync: 'Folder Sync',
     tabViewer: 'Viewer',
     tabEncode: 'Encode/Decode',
     tabSync: 'Sync',
     viewerTitle: 'File Viewer (diff / json / md)',
+    viewerDiffTitle: 'Diff Compare (2 inputs)',
+    viewerJsonTitle: 'JSON Pretty',
+    viewerMarkdownTitle: 'Markdown Preview',
     openFile: 'Open File',
-    raw: 'Raw',
-    rendered: 'Rendered',
+    diffInputA: 'Original (A)',
+    diffInputB: 'Compare (B)',
+    jsonInput: 'JSON Input',
+    markdownInput: 'Markdown Input',
+    diffEmpty: 'Enter text to compare.',
+    diffSame: 'No differences.',
+    jsonInvalid: 'This is not valid JSON.',
+    mdHint: 'Markdown preview appears here.',
     encodeTitle: 'Encode/Decode',
     mode: 'Mode',
     encode: 'Encode',
@@ -61,10 +87,7 @@ const i18n = {
     runSync: 'Run Sync',
     source: 'Source',
     target: 'Target',
-    pick: 'Pick',
     delete: 'Delete',
-    chooseSourceFirst: 'Pick the source folder first.',
-    chooseTargetFirst: 'Pick the target folder first.',
     noJobs: 'No sync jobs.',
     decodeError: 'Decode failed.'
   }
@@ -81,15 +104,104 @@ function setTheme(theme) {
   document.getElementById('themeToggle').textContent = theme === 'light' ? t('themeDark') : t('themeLight');
 }
 
+function escapeHtml(raw) {
+  return raw
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function renderDiff() {
+  const aLines = document.getElementById('diffInputA').value.split('\n');
+  const bLines = document.getElementById('diffInputB').value.split('\n');
+  const hasInput = aLines.join('').trim().length > 0 || bLines.join('').trim().length > 0;
+
+  if (!hasInput) {
+    document.getElementById('diffContent').textContent = t('diffEmpty');
+    return;
+  }
+
+  const max = Math.max(aLines.length, bLines.length);
+  const result = [];
+
+  for (let i = 0; i < max; i += 1) {
+    const left = aLines[i] ?? '';
+    const right = bLines[i] ?? '';
+
+    if (left === right) {
+      result.push(`  ${left}`);
+      continue;
+    }
+
+    if (left.length > 0) {
+      result.push(`- ${left}`);
+    }
+    if (right.length > 0) {
+      result.push(`+ ${right}`);
+    }
+  }
+
+  document.getElementById('diffContent').textContent = result.length > 0 ? result.join('\n') : t('diffSame');
+}
+
+function renderJson() {
+  const jsonInput = document.getElementById('jsonInput').value;
+  if (!jsonInput.trim()) {
+    document.getElementById('jsonContent').textContent = '';
+    return;
+  }
+
+  try {
+    document.getElementById('jsonContent').textContent = JSON.stringify(JSON.parse(jsonInput), null, 2);
+  } catch {
+    document.getElementById('jsonContent').textContent = t('jsonInvalid');
+  }
+}
+
+function renderMarkdown() {
+  const input = document.getElementById('markdownInput').value;
+  if (!input.trim()) {
+    document.getElementById('markdownPreview').innerHTML = `<p class="muted">${t('mdHint')}</p>`;
+    return;
+  }
+
+  const safe = escapeHtml(input);
+  const html = safe
+    .replace(/^### (.*)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.*)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[(.*?)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+    .replace(/^- (.*)$/gm, '<li>$1</li>')
+    .replace(/(?:\r\n|\r|\n){2,}/g, '</p><p>')
+    .replace(/\n/g, '<br />');
+
+  const withLists = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+  document.getElementById('markdownPreview').innerHTML = `<p>${withLists}</p>`;
+}
+
 function applyI18n() {
   document.getElementById('languageLabel').textContent = t('language');
+  document.getElementById('sidebarTitle').textContent = t('sidebarTitle');
+  document.getElementById('featureViewer').textContent = t('featureViewer');
+  document.getElementById('featureEncode').textContent = t('featureEncode');
+  document.getElementById('featureSync').textContent = t('featureSync');
   document.getElementById('tabViewer').textContent = t('tabViewer');
   document.getElementById('tabEncode').textContent = t('tabEncode');
   document.getElementById('tabSync').textContent = t('tabSync');
   document.getElementById('viewerTitle').textContent = t('viewerTitle');
+  document.getElementById('viewerDiffTitle').textContent = t('viewerDiffTitle');
+  document.getElementById('viewerJsonTitle').textContent = t('viewerJsonTitle');
+  document.getElementById('viewerMarkdownTitle').textContent = t('viewerMarkdownTitle');
+  document.getElementById('diffInputA').placeholder = t('diffInputA');
+  document.getElementById('diffInputB').placeholder = t('diffInputB');
+  document.getElementById('jsonInput').placeholder = t('jsonInput');
+  document.getElementById('markdownInput').placeholder = t('markdownInput');
   document.getElementById('openFileBtn').textContent = t('openFile');
-  document.getElementById('viewerRawTitle').textContent = t('raw');
-  document.getElementById('viewerRenderedTitle').textContent = t('rendered');
   document.getElementById('encodeTitle').textContent = t('encodeTitle');
   document.getElementById('encodingLabel').textContent = t('mode');
   document.getElementById('encodeBtn').textContent = t('encode');
@@ -99,6 +211,9 @@ function applyI18n() {
   document.getElementById('syncTitle').textContent = t('syncTitle');
   document.getElementById('addSyncBtn').textContent = t('addSync');
   document.getElementById('runSyncBtn').textContent = t('runSync');
+  renderDiff();
+  renderJson();
+  renderMarkdown();
   setTheme(state.theme);
   renderSyncJobs();
 }
@@ -106,33 +221,17 @@ function applyI18n() {
 function persistInputs() {
   localStorage.setItem('locale', state.locale);
   localStorage.setItem('lastViewerPath', document.getElementById('openedFilePath').textContent);
-  localStorage.setItem('lastViewerRaw', document.getElementById('rawContent').value);
+  localStorage.setItem('lastDiffInputA', document.getElementById('diffInputA').value);
+  localStorage.setItem('lastDiffInputB', document.getElementById('diffInputB').value);
+  localStorage.setItem('lastJsonInput', document.getElementById('jsonInput').value);
+  localStorage.setItem('lastMarkdownInput', document.getElementById('markdownInput').value);
   localStorage.setItem('lastEncodeInput', document.getElementById('encodeInput').value);
   localStorage.setItem('lastEncodeOutput', document.getElementById('encodeOutput').value);
   localStorage.setItem('lastEncodingMode', document.getElementById('encodingMode').value);
 }
 
-function renderFile(ext, content) {
-  if (ext === '.json') {
-    try {
-      return JSON.stringify(JSON.parse(content), null, 2);
-    } catch {
-      return content;
-    }
-  }
-
-  if (ext === '.md') {
-    return content
-      .replace(/^### (.*)$/gm, '### $1')
-      .replace(/^## (.*)$/gm, '## $1')
-      .replace(/^# (.*)$/gm, '# $1');
-  }
-
-  return content;
-}
-
 function setupTabs() {
-  const tabs = Array.from(document.querySelectorAll('.tab'));
+  const tabs = Array.from(document.querySelectorAll('.tab, .feature-link'));
   const panels = {
     viewer: document.getElementById('viewerPanel'),
     encode: document.getElementById('encodePanel'),
@@ -141,10 +240,11 @@ function setupTabs() {
 
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
-      tabs.forEach((other) => other.classList.remove('active'));
-      tab.classList.add('active');
-      Object.values(panels).forEach((panel) => panel.classList.remove('active'));
-      panels[tab.dataset.tab].classList.add('active');
+      document.querySelectorAll('.tab').forEach((button) => button.classList.toggle('active', button.dataset.tab === tab.dataset.tab));
+      document.querySelectorAll('.feature-link').forEach((button) => button.classList.toggle('active', button.dataset.tab === tab.dataset.tab));
+      Object.entries(panels).forEach(([key, panel]) => {
+        panel.classList.toggle('active', key === tab.dataset.tab);
+      });
     });
   });
 }
@@ -211,8 +311,10 @@ async function bootstrap() {
   document.getElementById('languageSelect').value = state.locale;
   document.getElementById('encodingMode').value = state.lastEncodingMode;
   document.getElementById('openedFilePath').textContent = state.lastViewerPath;
-  document.getElementById('rawContent').value = state.lastViewerRaw;
-  document.getElementById('renderedContent').textContent = renderFile('', state.lastViewerRaw);
+  document.getElementById('diffInputA').value = state.lastDiffInputA;
+  document.getElementById('diffInputB').value = state.lastDiffInputB;
+  document.getElementById('jsonInput').value = state.lastJsonInput;
+  document.getElementById('markdownInput').value = state.lastMarkdownInput;
   document.getElementById('encodeInput').value = state.lastEncodeInput;
   document.getElementById('encodeOutput').value = state.lastEncodeOutput;
 
@@ -240,8 +342,32 @@ async function bootstrap() {
     }
 
     document.getElementById('openedFilePath').textContent = fileData.path;
-    document.getElementById('rawContent').value = fileData.content;
-    document.getElementById('renderedContent').textContent = renderFile(fileData.path.slice(fileData.path.lastIndexOf('.')), fileData.content);
+    document.getElementById('diffInputA').value = fileData.content;
+    document.getElementById('jsonInput').value = fileData.content;
+    document.getElementById('markdownInput').value = fileData.content;
+    renderDiff();
+    renderJson();
+    renderMarkdown();
+    persistInputs();
+  });
+
+  document.getElementById('diffInputA').addEventListener('input', () => {
+    renderDiff();
+    persistInputs();
+  });
+
+  document.getElementById('diffInputB').addEventListener('input', () => {
+    renderDiff();
+    persistInputs();
+  });
+
+  document.getElementById('jsonInput').addEventListener('input', () => {
+    renderJson();
+    persistInputs();
+  });
+
+  document.getElementById('markdownInput').addEventListener('input', () => {
+    renderMarkdown();
     persistInputs();
   });
 
