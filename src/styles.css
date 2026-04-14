@@ -147,11 +147,33 @@ button:hover {
   gap: 12px;
 }
 
-.multi-output-grid {
+.viewer-output-tabs {
   margin-top: 10px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.output-tab {
+  flex: 1;
+  min-width: 120px;
+}
+
+.output-tab.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.viewer-output-panels {
+  margin-top: 10px;
+}
+
+.output-panel {
+  display: none;
+}
+
+.output-panel.active {
+  display: block;
 }
 
 article h3 {
@@ -223,8 +245,12 @@ pre,
     position: static;
   }
 
-  .multi-output-grid,
   .viewer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .output-tab {
+    width: 100%;
+    flex: 1 1 100%;
   }
 }
