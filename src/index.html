@@ -50,10 +50,16 @@
             <button id="openFileBtn"></button>
             <span id="openedFilePath" class="muted"></span>
           </div>
-          <article class="input-card">
-            <h3 id="viewerInputTitle"></h3>
-            <textarea id="rawContent"></textarea>
-          </article>
+          <div class="viewer-grid">
+            <article class="input-card">
+              <h3 id="viewerLeftInputTitle"></h3>
+              <textarea id="rawContentLeft"></textarea>
+            </article>
+            <article class="input-card">
+              <h3 id="viewerRightInputTitle"></h3>
+              <textarea id="rawContentRight"></textarea>
+            </article>
+          </div>
           <div class="multi-output-grid">
             <article>
               <h3 id="viewerDiffTitle"></h3>
@@ -65,7 +71,7 @@
             </article>
             <article>
               <h3 id="viewerMarkdownTitle"></h3>
-              <pre id="markdownContent"></pre>
+              <div id="markdownContent" class="markdown-preview"></div>
             </article>
           </div>
         </section>

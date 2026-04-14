@@ -3,7 +3,8 @@ const state = {
   theme: localStorage.getItem('theme') || 'dark',
   syncJobs: [],
   lastViewerPath: localStorage.getItem('lastViewerPath') || '',
-  lastViewerRaw: localStorage.getItem('lastViewerRaw') || '',
+  lastViewerRawLeft: localStorage.getItem('lastViewerRawLeft') || '',
+  lastViewerRawRight: localStorage.getItem('lastViewerRawRight') || '',
   lastEncodeInput: localStorage.getItem('lastEncodeInput') || '',
   lastEncodeOutput: localStorage.getItem('lastEncodeOutput') || '',
   lastEncodingMode: localStorage.getItem('lastEncodingMode') || 'base64'
@@ -22,11 +23,12 @@ const i18n = {
     tabEncode: 'Encode/Decode',
     tabSync: 'Sync',
     viewerTitle: '파일 Viewer (diff / json / md)',
-    viewerInputTitle: '직접 입력',
-    viewerDiffTitle: 'Diff 미리보기',
-    viewerJsonTitle: 'JSON 미리보기',
-    viewerMarkdownTitle: 'Markdown 미리보기',
-    openFile: '파일 열기',
+    viewerLeftInputTitle: '입력 1 (원본)',
+    viewerRightInputTitle: '입력 2 (비교)',
+    viewerDiffTitle: 'Diff 결과',
+    viewerJsonTitle: 'JSON Pretty',
+    viewerMarkdownTitle: 'Markdown Preview',
+    openFile: '파일 열기 (입력 1)',
     encodeTitle: '인코드/디코드',
     mode: '모드',
     encode: '인코드',
@@ -42,7 +44,7 @@ const i18n = {
     noJobs: '등록된 동기화 작업이 없습니다.',
     decodeError: '디코드 중 오류가 발생했습니다.',
     invalidJson: '유효한 JSON이 아닙니다.',
-    markdownHint: 'Markdown 원문 미리보기입니다.',
+    markdownHint: 'Markdown 렌더링 결과입니다.',
     emptyDiff: '비교할 내용이 없습니다.',
     diffSame: '변경점이 없습니다.'
   },
@@ -58,11 +60,12 @@ const i18n = {
     tabEncode: 'Encode/Decode',
     tabSync: 'Sync',
     viewerTitle: 'File Viewer (diff / json / md)',
-    viewerInputTitle: 'Direct Input',
-    viewerDiffTitle: 'Diff Preview',
-    viewerJsonTitle: 'JSON Preview',
+    viewerLeftInputTitle: 'Input 1 (base)',
+    viewerRightInputTitle: 'Input 2 (compare)',
+    viewerDiffTitle: 'Diff Result',
+    viewerJsonTitle: 'JSON Pretty',
     viewerMarkdownTitle: 'Markdown Preview',
-    openFile: 'Open File',
+    openFile: 'Open File (Input 1)',
     encodeTitle: 'Encode/Decode',
     mode: 'Mode',
     encode: 'Encode',
@@ -78,7 +81,7 @@ const i18n = {
     noJobs: 'No sync jobs.',
     decodeError: 'Decode failed.',
     invalidJson: 'This is not valid JSON.',
-    markdownHint: 'Previewing markdown source text.',
+    markdownHint: 'Rendered markdown preview.',
     emptyDiff: 'No content to compare.',
     diffSame: 'No changes detected.'
   }
@@ -95,41 +98,132 @@ function setTheme(theme) {
   document.getElementById('themeToggle').textContent = theme === 'light' ? t('themeDark') : t('themeLight');
 }
 
-function createDiffView(content) {
-  const lines = content.split('\n');
-  if (content.trim().length === 0) {
+function escapeHtml(value) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function renderInlineMarkdown(text) {
+  return escapeHtml(text)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+}
+
+function renderMarkdown(markdown) {
+  if (!markdown.trim()) {
+    return `<p class="muted">${t('markdownHint')}</p>`;
+  }
+
+  const blocks = markdown.split('\n');
+  let inList = false;
+  let html = '';
+
+  for (const line of blocks) {
+    if (line.startsWith('- ')) {
+      if (!inList) {
+        html += '<ul>';
+        inList = true;
+      }
+      html += `<li>${renderInlineMarkdown(line.slice(2))}</li>`;
+      continue;
+    }
+
+    if (inList) {
+      html += '</ul>';
+      inList = false;
+    }
+
+    if (line.startsWith('### ')) {
+      html += `<h3>${renderInlineMarkdown(line.slice(4))}</h3>`;
+    } else if (line.startsWith('## ')) {
+      html += `<h2>${renderInlineMarkdown(line.slice(3))}</h2>`;
+    } else if (line.startsWith('# ')) {
+      html += `<h1>${renderInlineMarkdown(line.slice(2))}</h1>`;
+    } else if (line.trim() === '') {
+      html += '<br />';
+    } else {
+      html += `<p>${renderInlineMarkdown(line)}</p>`;
+    }
+  }
+
+  if (inList) {
+    html += '</ul>';
+  }
+
+  return html;
+}
+
+function createDiffView(leftContent, rightContent) {
+  const leftLines = leftContent.split('\n');
+  const rightLines = rightContent.split('\n');
+
+  if (!leftContent.trim() && !rightContent.trim()) {
     return t('emptyDiff');
   }
 
-  const hasDiff = lines.some((line) => line.startsWith('+') || line.startsWith('-'));
-  if (!hasDiff) {
-    return `${t('diffSame')}\n\n${content}`;
+  const rows = leftLines.length;
+  const cols = rightLines.length;
+  const lcs = Array.from({ length: rows + 1 }, () => Array(cols + 1).fill(0));
+
+  for (let i = rows - 1; i >= 0; i -= 1) {
+    for (let j = cols - 1; j >= 0; j -= 1) {
+      if (leftLines[i] === rightLines[j]) {
+        lcs[i][j] = lcs[i + 1][j + 1] + 1;
+      } else {
+        lcs[i][j] = Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+      }
+    }
   }
 
-  return lines
-    .map((line) => {
-      if (line.startsWith('+')) {
-        return `[+] ${line.slice(1)}`;
-      }
-      if (line.startsWith('-')) {
-        return `[-] ${line.slice(1)}`;
-      }
-      return `    ${line}`;
-    })
-    .join('\n');
+  const output = [];
+  let i = 0;
+  let j = 0;
+
+  while (i < rows && j < cols) {
+    if (leftLines[i] === rightLines[j]) {
+      output.push(`  ${leftLines[i]}`);
+      i += 1;
+      j += 1;
+    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+      output.push(`- ${leftLines[i]}`);
+      i += 1;
+    } else {
+      output.push(`+ ${rightLines[j]}`);
+      j += 1;
+    }
+  }
+
+  while (i < rows) {
+    output.push(`- ${leftLines[i]}`);
+    i += 1;
+  }
+
+  while (j < cols) {
+    output.push(`+ ${rightLines[j]}`);
+    j += 1;
+  }
+
+  const onlyEqual = output.every((line) => line.startsWith('  '));
+  return onlyEqual ? `${t('diffSame')}\n\n${leftContent}` : output.join('\n');
 }
 
-function renderViewerOutputs(content) {
-  document.getElementById('diffContent').textContent = createDiffView(content);
+function renderViewerOutputs(leftContent, rightContent) {
+  document.getElementById('diffContent').textContent = createDiffView(leftContent, rightContent);
 
   try {
-    const json = JSON.parse(content);
+    const json = JSON.parse(rightContent || leftContent);
     document.getElementById('jsonContent').textContent = JSON.stringify(json, null, 2);
   } catch {
     document.getElementById('jsonContent').textContent = t('invalidJson');
   }
 
-  document.getElementById('markdownContent').textContent = `${t('markdownHint')}\n\n${content}`;
+  document.getElementById('markdownContent').innerHTML = renderMarkdown(rightContent || leftContent);
 }
 
 function applyI18n() {
@@ -142,7 +236,8 @@ function applyI18n() {
   document.getElementById('tabEncode').textContent = t('tabEncode');
   document.getElementById('tabSync').textContent = t('tabSync');
   document.getElementById('viewerTitle').textContent = t('viewerTitle');
-  document.getElementById('viewerInputTitle').textContent = t('viewerInputTitle');
+  document.getElementById('viewerLeftInputTitle').textContent = t('viewerLeftInputTitle');
+  document.getElementById('viewerRightInputTitle').textContent = t('viewerRightInputTitle');
   document.getElementById('viewerDiffTitle').textContent = t('viewerDiffTitle');
   document.getElementById('viewerJsonTitle').textContent = t('viewerJsonTitle');
   document.getElementById('viewerMarkdownTitle').textContent = t('viewerMarkdownTitle');
@@ -156,7 +251,7 @@ function applyI18n() {
   document.getElementById('syncTitle').textContent = t('syncTitle');
   document.getElementById('addSyncBtn').textContent = t('addSync');
   document.getElementById('runSyncBtn').textContent = t('runSync');
-  renderViewerOutputs(document.getElementById('rawContent').value);
+  renderViewerOutputs(document.getElementById('rawContentLeft').value, document.getElementById('rawContentRight').value);
   setTheme(state.theme);
   renderSyncJobs();
 }
@@ -164,7 +259,8 @@ function applyI18n() {
 function persistInputs() {
   localStorage.setItem('locale', state.locale);
   localStorage.setItem('lastViewerPath', document.getElementById('openedFilePath').textContent);
-  localStorage.setItem('lastViewerRaw', document.getElementById('rawContent').value);
+  localStorage.setItem('lastViewerRawLeft', document.getElementById('rawContentLeft').value);
+  localStorage.setItem('lastViewerRawRight', document.getElementById('rawContentRight').value);
   localStorage.setItem('lastEncodeInput', document.getElementById('encodeInput').value);
   localStorage.setItem('lastEncodeOutput', document.getElementById('encodeOutput').value);
   localStorage.setItem('lastEncodingMode', document.getElementById('encodingMode').value);
@@ -251,8 +347,9 @@ async function bootstrap() {
   document.getElementById('languageSelect').value = state.locale;
   document.getElementById('encodingMode').value = state.lastEncodingMode;
   document.getElementById('openedFilePath').textContent = state.lastViewerPath;
-  document.getElementById('rawContent').value = state.lastViewerRaw;
-  renderViewerOutputs(state.lastViewerRaw);
+  document.getElementById('rawContentLeft').value = state.lastViewerRawLeft;
+  document.getElementById('rawContentRight').value = state.lastViewerRawRight;
+  renderViewerOutputs(state.lastViewerRawLeft, state.lastViewerRawRight);
   document.getElementById('encodeInput').value = state.lastEncodeInput;
   document.getElementById('encodeOutput').value = state.lastEncodeOutput;
 
@@ -280,14 +377,18 @@ async function bootstrap() {
     }
 
     document.getElementById('openedFilePath').textContent = fileData.path;
-    document.getElementById('rawContent').value = fileData.content;
-    renderViewerOutputs(fileData.content);
+    document.getElementById('rawContentLeft').value = fileData.content;
+    renderViewerOutputs(fileData.content, document.getElementById('rawContentRight').value);
     persistInputs();
   });
 
-  document.getElementById('rawContent').addEventListener('input', () => {
-    const content = document.getElementById('rawContent').value;
-    renderViewerOutputs(content);
+  document.getElementById('rawContentLeft').addEventListener('input', () => {
+    renderViewerOutputs(document.getElementById('rawContentLeft').value, document.getElementById('rawContentRight').value);
+    persistInputs();
+  });
+
+  document.getElementById('rawContentRight').addEventListener('input', () => {
+    renderViewerOutputs(document.getElementById('rawContentLeft').value, document.getElementById('rawContentRight').value);
     persistInputs();
   });
 

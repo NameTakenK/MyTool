@@ -161,7 +161,8 @@ article h3 {
 }
 
 textarea,
-pre {
+pre,
+.markdown-preview {
   width: 100%;
   min-height: 210px;
   background: transparent;
@@ -171,6 +172,31 @@ pre {
   padding: 10px;
   overflow: auto;
   white-space: pre-wrap;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3 {
+  margin: 0 0 8px;
+}
+
+.markdown-preview p {
+  margin: 0 0 8px;
+}
+
+.markdown-preview ul {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.markdown-preview code {
+  background: var(--accent-soft);
+  border-radius: 6px;
+  padding: 0 4px;
+}
+
+.markdown-preview a {
+  color: var(--accent);
 }
 
 .muted {
