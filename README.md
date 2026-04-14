@@ -3,7 +3,10 @@
 Electron 기반 유틸리티 앱입니다.
 
 ## 기능
-- **Viewer**: `.diff`, `.json`, `.md` 파일 열람
+- **Viewer**
+  - **Diff**: 입력 2개(원본/비교)를 받아 라인 단위 차이 표시
+  - **JSON**: JSON 파싱 후 Pretty Print
+  - **Markdown**: 원문을 렌더링한 Preview 표시
 - **Encode/Decode**: Base64, URL Encoding
 - **Sync**: source 폴더를 target 폴더와 동일하게 미러링 (복수 작업 등록 가능)
 - **테마**: 다크/라이트
