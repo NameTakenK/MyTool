@@ -7,7 +7,8 @@ const state = {
   lastViewerRawRight: localStorage.getItem('lastViewerRawRight') || '',
   lastEncodeInput: localStorage.getItem('lastEncodeInput') || '',
   lastEncodeOutput: localStorage.getItem('lastEncodeOutput') || '',
-  lastEncodingMode: localStorage.getItem('lastEncodingMode') || 'base64'
+  lastEncodingMode: localStorage.getItem('lastEncodingMode') || 'base64',
+  viewerOutputTab: localStorage.getItem('viewerOutputTab') || 'diff'
 };
 
 const i18n = {
@@ -139,12 +140,11 @@ function renderMarkdown(markdown) {
       inList = false;
     }
 
-    if (line.startsWith('### ')) {
-      html += `<h3>${renderInlineMarkdown(line.slice(4))}</h3>`;
-    } else if (line.startsWith('## ')) {
-      html += `<h2>${renderInlineMarkdown(line.slice(3))}</h2>`;
-    } else if (line.startsWith('# ')) {
-      html += `<h1>${renderInlineMarkdown(line.slice(2))}</h1>`;
+    const headingMatch = line.match(/^(#{1,3})\s*(.+)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const headingText = headingMatch[2].trim();
+      html += `<h${level}>${renderInlineMarkdown(headingText)}</h${level}>`;
     } else if (line.trim() === '') {
       html += '<br />';
     } else {
@@ -264,6 +264,7 @@ function persistInputs() {
   localStorage.setItem('lastEncodeInput', document.getElementById('encodeInput').value);
   localStorage.setItem('lastEncodeOutput', document.getElementById('encodeOutput').value);
   localStorage.setItem('lastEncodingMode', document.getElementById('encodingMode').value);
+  localStorage.setItem('viewerOutputTab', state.viewerOutputTab);
 }
 
 function setupTabs() {
@@ -283,6 +284,27 @@ function setupTabs() {
       });
     });
   });
+}
+
+function setupOutputTabs() {
+  const tabs = Array.from(document.querySelectorAll('.output-tab'));
+  const panels = Array.from(document.querySelectorAll('.output-panel'));
+
+  const activate = (outputType) => {
+    tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.output === outputType));
+    panels.forEach((panel) => panel.classList.toggle('active', panel.dataset.outputPanel === outputType));
+    state.viewerOutputTab = outputType;
+    localStorage.setItem('viewerOutputTab', outputType);
+  };
+
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => activate(tab.dataset.output));
+  });
+
+  const initial = tabs.some((tab) => tab.dataset.output === state.viewerOutputTab)
+    ? state.viewerOutputTab
+    : 'diff';
+  activate(initial);
 }
 
 async function addSyncJob() {
@@ -356,6 +378,7 @@ async function bootstrap() {
   state.syncJobs = await window.api.loadSyncJobs();
 
   setupTabs();
+  setupOutputTabs();
   applyI18n();
 
   document.getElementById('languageSelect').addEventListener('change', (event) => {

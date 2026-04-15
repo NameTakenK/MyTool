@@ -60,17 +60,20 @@
               <textarea id="rawContentRight"></textarea>
             </article>
           </div>
-          <div class="multi-output-grid">
-            <article>
-              <h3 id="viewerDiffTitle"></h3>
+          <div class="viewer-output-tabs" id="viewerOutputTabs">
+            <button class="output-tab active" data-output="diff" id="viewerDiffTitle"></button>
+            <button class="output-tab" data-output="json" id="viewerJsonTitle"></button>
+            <button class="output-tab" data-output="markdown" id="viewerMarkdownTitle"></button>
+          </div>
+
+          <div class="viewer-output-panels">
+            <article class="output-panel active" data-output-panel="diff">
               <pre id="diffContent"></pre>
             </article>
-            <article>
-              <h3 id="viewerJsonTitle"></h3>
+            <article class="output-panel" data-output-panel="json">
               <pre id="jsonContent"></pre>
             </article>
-            <article>
-              <h3 id="viewerMarkdownTitle"></h3>
+            <article class="output-panel" data-output-panel="markdown">
               <div id="markdownContent" class="markdown-preview"></div>
             </article>
           </div>
