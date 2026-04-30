@@ -1,151 +1,131 @@
 const path = require('node:path');
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
+const os = require('node:os');
+const fs = require('node:fs/promises');
+const { createHash } = require('node:crypto');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 
-const APP_STATE_FILE = path.join(app.getPath('userData'), 'sync-jobs.json');
+const execFileAsync = promisify(execFile);
+
+function enablePortableModeIfRequested() {
+  const portableFlag = process.argv.includes('--portable') || process.env.PORTABLE === '1';
+  if (!portableFlag) return;
+  const portableRoot = path.join(path.dirname(app.getPath('exe')), 'portable-data');
+  app.setPath('userData', portableRoot);
+}
+
+enablePortableModeIfRequested();
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 980,
+    width: 1400,
+    height: 900,
+    minWidth: 1000,
     minHeight: 700,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    }
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
   });
-
   win.loadFile(path.join(__dirname, 'index.html'));
 }
 
 app.whenReady().then(() => {
   createWindow();
-
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform !== 'darwin') app.quit();
 });
 
-async function ensureDir(targetPath) {
-  await fsp.mkdir(targetPath, { recursive: true });
+function repoKey(repoUrl) {
+  return createHash('sha1').update(repoUrl).digest('hex').slice(0, 12);
 }
 
-async function syncFolder(source, target) {
-  const stats = await fsp.stat(source);
-  if (!stats.isDirectory()) {
-    throw new Error(`Source is not a directory: ${source}`);
-  }
-
-  await ensureDir(target);
-
-  async function copyRecursive(srcDir, dstDir) {
-    const entries = await fsp.readdir(srcDir, { withFileTypes: true });
-    const sourceNames = new Set(entries.map((entry) => entry.name));
-
-    await ensureDir(dstDir);
-
-    const targetEntries = await fsp.readdir(dstDir, { withFileTypes: true });
-    for (const targetEntry of targetEntries) {
-      if (!sourceNames.has(targetEntry.name)) {
-        const toRemove = path.join(dstDir, targetEntry.name);
-        await fsp.rm(toRemove, { recursive: true, force: true });
-      }
-    }
-
-    for (const entry of entries) {
-      const srcPath = path.join(srcDir, entry.name);
-      const dstPath = path.join(dstDir, entry.name);
-
-      if (entry.isDirectory()) {
-        await copyRecursive(srcPath, dstPath);
-      } else if (entry.isFile()) {
-        await ensureDir(path.dirname(dstPath));
-        await fsp.copyFile(srcPath, dstPath);
-      }
-    }
-  }
-
-  await copyRecursive(source, target);
+function repoRoot() {
+  return path.join(app.getPath('userData'), 'repos');
 }
 
-ipcMain.handle('dialog:open-file', async (_, options = {}) => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    filters: options.filters || []
-  });
+async function runGit(args, cwd) {
+  return execFileAsync('git', args, { cwd });
+}
 
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
+async function ensureGithubRepo(repoUrl) {
+  const dir = path.join(repoRoot(), repoKey(repoUrl));
+  await fs.mkdir(repoRoot(), { recursive: true });
+
+  try {
+    await fs.access(path.join(dir, '.git'));
+    await runGit(['pull', '--rebase'], dir).catch(() => runGit(['pull'], dir));
+  } catch {
+    await runGit(['clone', repoUrl, dir], process.cwd());
   }
 
-  const selected = result.filePaths[0];
-  const content = await fsp.readFile(selected, 'utf8');
-  return {
-    path: selected,
-    content
-  };
-});
+  return dir;
+}
 
-ipcMain.handle('dialog:pick-folder', async () => {
+async function buildTree(rootPath, currentPath = rootPath) {
+  const entries = await fs.readdir(currentPath, { withFileTypes: true });
+  const nodes = [];
+
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+    const fullPath = path.join(currentPath, entry.name);
+    const relPath = path.relative(rootPath, fullPath).replaceAll('\\', '/');
+
+    if (entry.isDirectory()) {
+      nodes.push({ type: 'folder', name: entry.name, path: relPath, children: await buildTree(rootPath, fullPath) });
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+      nodes.push({ type: 'file', name: entry.name, path: relPath });
+    }
+  }
+  return nodes;
+}
+
+async function autoCommitAndPush(vaultPath, notePath, action) {
+  await runGit(['add', notePath], vaultPath);
+  const { stdout } = await runGit(['status', '--porcelain'], vaultPath);
+  if (!stdout.trim()) return;
+
+  await runGit(['config', 'user.name', 'MyTool Bot'], vaultPath).catch(() => {});
+  await runGit(['config', 'user.email', 'mytool-bot@localhost'], vaultPath).catch(() => {});
+
+  await runGit(['commit', '-m', `${action}: ${notePath}`], vaultPath);
+  await runGit(['push'], vaultPath);
+}
+
+ipcMain.handle('vault:pick', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-
+  if (result.canceled || result.filePaths.length === 0) return null;
   return result.filePaths[0];
 });
 
-ipcMain.handle('viewer:read-file', async (_, filePath) => {
-  const ext = path.extname(filePath).toLowerCase();
-  const content = await fsp.readFile(filePath, 'utf8');
-  return { ext, content, filePath };
-});
-
-ipcMain.handle('sync:run', async (_, jobs) => {
-  const results = [];
-
-  for (const job of jobs) {
-    try {
-      await syncFolder(job.source, job.target);
-      results.push({
-        id: job.id,
-        status: 'success',
-        message: `Synced: ${job.source} -> ${job.target}`
-      });
-    } catch (error) {
-      results.push({
-        id: job.id,
-        status: 'error',
-        message: error.message
-      });
-    }
+ipcMain.handle('github:connect', async (_, repoUrl) => {
+  if (!repoUrl || !repoUrl.includes('github.com')) {
+    throw new Error('유효한 GitHub 저장소 주소를 입력하세요.');
   }
-
-  return results;
+  const vaultPath = await ensureGithubRepo(repoUrl.trim());
+  return vaultPath;
 });
 
-ipcMain.handle('state:load-sync-jobs', async () => {
-  if (!fs.existsSync(APP_STATE_FILE)) {
-    return [];
-  }
+ipcMain.handle('vault:tree', async (_, vaultPath) => buildTree(vaultPath));
+ipcMain.handle('note:read', async (_, vaultPath, notePath) => fs.readFile(path.join(vaultPath, notePath), 'utf8'));
 
-  const raw = await fsp.readFile(APP_STATE_FILE, 'utf8');
-  return JSON.parse(raw);
-});
-
-ipcMain.handle('state:save-sync-jobs', async (_, jobs) => {
-  await ensureDir(path.dirname(APP_STATE_FILE));
-  await fsp.writeFile(APP_STATE_FILE, JSON.stringify(jobs, null, 2), 'utf8');
+ipcMain.handle('note:save', async (_, vaultPath, notePath, content) => {
+  const target = path.join(vaultPath, notePath);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, content, 'utf8');
+  await autoCommitAndPush(vaultPath, notePath, 'update').catch(() => {});
   return true;
+});
+
+ipcMain.handle('note:create', async (_, vaultPath, parentRelativePath, fileName) => {
+  const safeName = (fileName.endsWith('.md') ? fileName : `${fileName}.md`).replace(/[<>:"|?*]/g, '-');
+  const target = path.join(vaultPath, parentRelativePath || '', safeName);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, '# New Note\n', { flag: 'wx' });
+  const rel = path.relative(vaultPath, target).replaceAll('\\', '/');
+  await autoCommitAndPush(vaultPath, rel, 'create').catch(() => {});
+  return rel;
 });

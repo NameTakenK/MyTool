@@ -1,10 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
-  openFile: (options) => ipcRenderer.invoke('dialog:open-file', options),
-  pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
-  readFile: (filePath) => ipcRenderer.invoke('viewer:read-file', filePath),
-  runSync: (jobs) => ipcRenderer.invoke('sync:run', jobs),
-  loadSyncJobs: () => ipcRenderer.invoke('state:load-sync-jobs'),
-  saveSyncJobs: (jobs) => ipcRenderer.invoke('state:save-sync-jobs', jobs)
+  pickVault: () => ipcRenderer.invoke('vault:pick'),
+  connectGithub: (repoUrl) => ipcRenderer.invoke('github:connect', repoUrl),
+  loadVaultTree: (vaultPath) => ipcRenderer.invoke('vault:tree', vaultPath),
+  readNote: (vaultPath, notePath) => ipcRenderer.invoke('note:read', vaultPath, notePath),
+  saveNote: (vaultPath, notePath, content) => ipcRenderer.invoke('note:save', vaultPath, notePath, content),
+  createNote: (vaultPath, parentRelativePath, fileName) => ipcRenderer.invoke('note:create', vaultPath, parentRelativePath, fileName)
 });
