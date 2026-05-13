@@ -10,11 +10,18 @@ type GitHubConfig = {
   owner: string; repo: string; branch: string; token: string;
   sourcePath: string; wikiPath: string; backupPath: string;
 };
+type LlmProvider = 'openai' | 'gemini' | 'gauss';
+type LlmConfig = {
+  provider: LlmProvider;
+  apiKey: string;
+  model: string;
+};
 type BackupSnapshot = { at: string; docs: Doc[] };
 type GraphNode = { id: string; x: number; y: number };
 type NewFileZone = 'source' | 'wiki';
 
 const CFG_KEY = 'llm-wiki-github-config';
+const LLM_CFG_KEY = 'llm-wiki-llm-config';
 const normalizeHost = (host: string) => host.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
 const getApiBase = (host: string) => normalizeHost(host) === 'github.com' || !normalizeHost(host) ? 'https://api.github.com' : `https://${normalizeHost(host)}/api/v3`;
 const b64 = (text: string) => {
@@ -99,6 +106,7 @@ function App() {
     host: 'github.com', owner: '', repo: '', branch: 'main', token: '',
     sourcePath: 'docs/source', wikiPath: 'docs/llm-wiki', backupPath: 'docs/backups'
   });
+  const [llmCfg, setLlmCfg] = useState<LlmConfig>({ provider: 'openai', apiKey: '', model: 'gpt-4.1-mini' });
   const didAutoSync = useRef(false);
 
   const activeDoc = docs.find((d) => d.path === active) ?? docs[0];
@@ -131,8 +139,40 @@ function App() {
 
   const saveSettingsAndConnect = async () => {
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+    localStorage.setItem(LLM_CFG_KEY, JSON.stringify(llmCfg));
     setStatus('settings saved');
     await syncFromServer('manual');
+  };
+
+  const callLlm = async (prompt: string) => {
+    if (!llmCfg.apiKey) throw new Error('LLM API key required');
+    if (llmCfg.provider === 'gauss') {
+      const res = await fetch('https://agent.sec.samsung.net/api/v1/run/c3b7d293-8d05-4f9f-ab46-b15737f4c476?stream=false', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': llmCfg.apiKey },
+        body: JSON.stringify({ input_type: 'chat', output_type: 'chat', input_value: prompt })
+      });
+      if (!res.ok) throw new Error(`Gauss API ${res.status}`);
+      return JSON.stringify(await res.json());
+    }
+    if (llmCfg.provider === 'openai') {
+      const res = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${llmCfg.apiKey}` },
+        body: JSON.stringify({ model: llmCfg.model || 'gpt-4.1-mini', input: prompt })
+      });
+      if (!res.ok) throw new Error(`OpenAI API ${res.status}`);
+      const data = await res.json();
+      return data.output_text || JSON.stringify(data);
+    }
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${llmCfg.model || 'gemini-1.5-flash'}:generateContent?key=${llmCfg.apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    if (!res.ok) throw new Error(`Gemini API ${res.status}`);
+    const data = await res.json();
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data);
   };
 
   const createFile = () => {
@@ -207,6 +247,8 @@ function App() {
     try {
       const parsed = JSON.parse(raw) as Partial<GitHubConfig>;
       setCfg((prev) => ({ ...prev, ...parsed, host: parsed.host || prev.host }));
+      const llmRaw = localStorage.getItem(LLM_CFG_KEY);
+      if (llmRaw) setLlmCfg((prev) => ({ ...prev, ...(JSON.parse(llmRaw) as Partial<LlmConfig>) }));
       setStatus('loaded saved settings');
     } catch {
       setStatus('failed to load saved settings');
@@ -234,6 +276,17 @@ function App() {
     return `현재는 로컬 검색 기반입니다(LLM 미연동).\n검색된 문서: ${related.length}개`;
   };
 
+  const askWithLlm = async () => {
+    try {
+      const base = ask();
+      const answer = await callLlm(`${question}\n\nContext:\n${base}`);
+      setStatus(`LLM answered (${llmCfg.provider})`);
+      alert(answer.slice(0, 2000));
+    } catch (e: any) {
+      setStatus(`LLM failed: ${e.message}`);
+    }
+  };
+
 
   const graphNodes: GraphNode[] = docs.filter((d) => d.zone === 'wiki').map((d, i, arr) => {
     const angle = (2 * Math.PI * i) / Math.max(arr.length, 1);
@@ -255,7 +308,7 @@ function App() {
     <aside className='left-nav'>
       <h2>LLM Wiki (Web)</h2>
       {(['files', 'graph', 'askSearch', 'settings'] as Screen[]).map((s) => <button key={s} className={screen === s ? 'on' : ''} onClick={() => setScreen(s)}>{s === 'askSearch' ? 'ask & search' : s}</button>)}
-      <button onClick={() => syncFromServer('manual')}>Sync</button>
+      <button onClick={() => syncFromServer('manual')}>Refresh from Server</button>
       <small>{status}</small>
     </aside>
 
@@ -266,6 +319,22 @@ function App() {
           {(['host', 'owner', 'repo', 'branch', 'token', 'sourcePath', 'wikiPath', 'backupPath'] as (keyof GitHubConfig)[]).map((k) => <label key={k}>{k}
             <input type={k === 'token' ? 'password' : 'text'} value={cfg[k]} onChange={(e) => setCfg({ ...cfg, [k]: e.target.value })} />
           </label>)}
+        </div>
+        <h3>LLM Settings</h3>
+        <div className='grid'>
+          <label>provider
+            <select value={llmCfg.provider} onChange={(e) => setLlmCfg({ ...llmCfg, provider: e.target.value as LlmProvider })}>
+              <option value='openai'>openai</option>
+              <option value='gemini'>gemini</option>
+              <option value='gauss'>gauss</option>
+            </select>
+          </label>
+          <label>apiKey
+            <input type='password' value={llmCfg.apiKey} onChange={(e) => setLlmCfg({ ...llmCfg, apiKey: e.target.value })} />
+          </label>
+          <label>model
+            <input type='text' value={llmCfg.model} onChange={(e) => setLlmCfg({ ...llmCfg, model: e.target.value })} placeholder={llmCfg.provider === 'openai' ? 'gpt-4.1-mini' : llmCfg.provider === 'gemini' ? 'gemini-1.5-flash' : 'gauss-default'} />
+          </label>
         </div>
         <button onClick={saveSettingsAndConnect}>Save Settings & Connect</button>
         <h4>Local backup snapshots</h4>
@@ -281,7 +350,7 @@ function App() {
         </svg>
       </section>}
 
-      {screen === 'askSearch' && <section className='card ask-only'><h3>Ask & Search</h3><p>현재는 LLM 모델 연동 전 단계입니다. 문서 검색 기반으로 답합니다.</p><input value={question} onChange={(e) => { setQuestion(e.target.value); }} placeholder='질문/키워드 입력' /><div style={{ marginTop: 8, marginBottom: 8 }}><button onClick={ask}>Search in Docs</button></div><pre>{question ? 'Search 버튼을 눌러 결과를 확인하세요.' : '질문을 입력하세요.'}</pre><h4>검색 결과</h4><ul>{askMatches.map((d) => <li key={d.path}><button onClick={() => { setActive(d.path); setScreen('files'); }}>{d.path}</button></li>)}</ul></section>}
+      {screen === 'askSearch' && <section className='card ask-only'><h3>Ask & Search</h3><p>검색 + LLM 답변(선택 provider) 지원</p><input value={question} onChange={(e) => { setQuestion(e.target.value); }} placeholder='질문/키워드 입력' /><div style={{ marginTop: 8, marginBottom: 8, display: 'flex', gap: 8 }}><button onClick={ask}>Search in Docs</button><button onClick={askWithLlm}>Ask LLM</button></div><pre>{question ? 'Search 또는 Ask LLM 버튼을 눌러 결과를 확인하세요.' : '질문을 입력하세요.'}</pre><h4>검색 결과</h4><ul>{askMatches.map((d) => <li key={d.path}><button onClick={() => { setActive(d.path); setScreen('files'); }}>{d.path}</button></li>)}</ul></section>}
 
       {screen === 'files' && <main className='layout'>
         <aside className='card'><h3>Files (연동 후 표시)</h3><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder='Search' />
