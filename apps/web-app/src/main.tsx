@@ -223,7 +223,7 @@ function App() {
     return data?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data);
   };
 
-  const buildWikiPrompt = () => `너는 LLM Wiki 콘텐츠 에디터다.\n\n[필수 참고]\n- ${promptRef}\n\n[경로 고정]\n- 입력 소스(읽기 전용): ${cfg.sourcePath}\n- 출력 위키(수정 대상): ${cfg.wikiPath}\n- 메인 인덱스: ${cfg.wikiPath}/index.md\n- 작업 로그: ${cfg.wikiPath}/log.md\n\n[금지]\n- 웹앱 코드 수정 금지\n- Obsidian 설치/설정/연동 금지\n- source 원문 수정 금지\n\n[작업]\n1) source 스캔 후 주제/엔티티 추출\n2) wiki 문서 생성/갱신\n3) index.md 허브 정리\n4) 상호 링크 보강/중복 통합\n5) log.md 변경 기록\n\n[출력]\n- 변경 파일 목록\n- 신규 문서 목록\n- 통합/삭제 목록\n- TODO 5개\n`;
+  const buildWikiPrompt = () => `이걸 참고해서 llm wiki 만들어줘\n- ${promptRef}\n\n- 입력 소스(읽기 전용): ${cfg.sourcePath}\n- 출력 위키(수정 대상): ${cfg.wikiPath}\n- 메인 인덱스: ${cfg.wikiPath}/index.md\n- 작업 로그: ${cfg.wikiPath}/log.md`;
 
   const copyPrompt = async () => {
     try {
@@ -235,10 +235,10 @@ function App() {
   };
 
   const createFile = (baseDir: string) => {
-    const input = window.prompt('새 파일명 (.md)', 'new-note.md');
+    const input = window.prompt('새 파일명', 'new-note');
     if (!input) return;
-    if (!input.endsWith('.md')) return setStatus('file must end with .md');
-    const safe = input.replace(/^\/+/, '').replace(/\.\./g, '').trim();
+    const safeBase = input.replace(/^\/+/, '').replace(/\.\./g, '').trim();
+    const safe = safeBase.endsWith('.md') ? safeBase : `${safeBase}.md`;
     if (!safe) return setStatus('invalid file name');
     const path = `${baseDir}/${safe}`.replace(/^\/+/, '');
     if (docs.some((d) => d.path === path)) return setStatus('file already exists');
@@ -253,11 +253,11 @@ function App() {
 
   const renameFile = (oldPath: string) => {
     const oldName = oldPath.split('/').pop() || '';
-    const nextName = window.prompt('새 파일명 (.md)', oldName);
+    const nextName = window.prompt('새 파일명', oldName?.replace(/\.md$/, '') || '');
     if (!nextName || nextName === oldName) return;
-    if (!nextName.endsWith('.md')) return setStatus('file must end with .md');
+    const normalizedNext = nextName.endsWith('.md') ? nextName : `${nextName}.md`;
     const dir = oldPath.split('/').slice(0, -1).join('/');
-    const newPath = `${dir}/${nextName}`;
+    const newPath = `${dir}/${normalizedNext}`;
     if (docs.some((d) => d.path === newPath)) return setStatus('target already exists');
     setDocs((prev) => prev.map((d) => d.path === oldPath ? { ...d, path: newPath, sha: undefined } : d));
     setLocalOnlyPaths((prev) => Array.from(new Set([...prev.filter((p) => p !== oldPath), newPath])));
