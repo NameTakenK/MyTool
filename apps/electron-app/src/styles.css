@@ -1,0 +1,1 @@
+body{margin:0;font-family:sans-serif}.layout{display:grid;grid-template-columns:240px 1fr 240px;grid-template-rows:1fr 180px;height:100vh}aside,main,footer{border:1px solid #ddd;padding:8px;overflow:auto}main textarea{width:100%;height:180px}

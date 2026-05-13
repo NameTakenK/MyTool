@@ -1,0 +1,1 @@
+body{margin:0;font-family:Arial}.layout{display:grid;grid-template-columns:280px 1fr 280px;grid-template-rows:1fr 220px;height:100vh}aside,main,footer{border:1px solid #e0e0e0;padding:8px;overflow:auto}button{display:block;margin:4px 0}input{width:100%;padding:6px}
