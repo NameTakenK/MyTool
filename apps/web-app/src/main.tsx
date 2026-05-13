@@ -34,9 +34,16 @@ const parseLinks = (text: string) => [
   ...[...text.matchAll(/\[[^\]]+\]\(([^)]+\.md)\)/g)].map((m) => m[1])
 ];
 
+const normalizeOwner = (owner: string) => owner.trim().replace(/^\/+/, '');
+const normalizeRepo = (repo: string) => repo.trim().replace(/^\/+/, '').replace(/\.git$/, '');
+const normalizeContentPath = (path: string) => path.split('/').filter(Boolean).map((seg) => encodeURIComponent(seg)).join('/');
+
 async function ghApi(config: GitHubConfig, path: string, init?: RequestInit) {
   const apiBase = getApiBase(config.host);
-  const url = `${apiBase}/repos/${config.owner}/${config.repo}/contents/${path}${init?.method === 'PUT' ? '' : `?ref=${config.branch}`}`;
+  const safeOwner = normalizeOwner(config.owner);
+  const safeRepo = normalizeRepo(config.repo);
+  const safePath = normalizeContentPath(path);
+  const url = `${apiBase}/repos/${safeOwner}/${safeRepo}/contents/${safePath}${init?.method === 'PUT' || init?.method === 'DELETE' ? '' : `?ref=${config.branch}`}`;
   const res = await fetch(url, {
     ...init,
     headers: {
@@ -54,7 +61,13 @@ async function ghApi(config: GitHubConfig, path: string, init?: RequestInit) {
 }
 
 async function loadMarkdownTree(config: GitHubConfig, rootPath: string, zone: 'source' | 'wiki'): Promise<Doc[]> {
-  const list = await ghApi(config, rootPath);
+  let list: any;
+  try {
+    list = await ghApi(config, rootPath);
+  } catch (e: any) {
+    if (String(e?.message || '').includes('GitHub API 404')) return [];
+    throw e;
+  }
   const arr = Array.isArray(list) ? list : [list];
   const docs: Doc[] = [];
   for (const item of arr) {
