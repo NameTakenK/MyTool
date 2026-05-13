@@ -100,6 +100,7 @@ function App() {
   const [connected, setConnected] = useState(false);
   const [cfgLoaded, setCfgLoaded] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [draftText, setDraftText] = useState('');
   const [localOnlyPaths, setLocalOnlyPaths] = useState<string[]>([]);
   const [cfg, setCfg] = useState<GitHubConfig>({
     host: 'github.com', owner: '', repo: '', branch: 'main', token: '',
@@ -216,6 +217,15 @@ function App() {
     setLocalOnlyPaths((prev) => Array.from(new Set([...prev, path])));
     setActive(path);
     setStatus(`created local file: ${path}`);
+    setDraftText(newDoc.content);
+  };
+
+  const saveLocalEdit = () => {
+    if (!activeDoc) return;
+    setDocs((prev) => prev.map((d) => d.path === active ? { ...d, content: draftText } : d));
+    setLocalOnlyPaths((prev) => Array.from(new Set([...prev, active])));
+    setDirty(false);
+    setStatus(`saved local: ${active}`);
   };
 
   
@@ -301,6 +311,7 @@ function App() {
   }, [cfgLoaded, cfg.host, cfg.owner, cfg.repo, cfg.branch, cfg.token, cfg.sourcePath, cfg.wikiPath]);
 
   useEffect(() => {
+    setDraftText(activeDoc?.content || '');
     setDirty(false);
   }, [active]);
 
@@ -402,7 +413,7 @@ function App() {
       {screen === 'files' && <main className='layout'>
         <aside className='card'><h3>Files</h3>
           <div className='list'>{treeItems.map((n) => n.isFile ? <div key={n.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><button className={n.path === active ? 'on' : ''} onClick={() => setActive(n.path)} style={{ marginLeft: n.depth * 12 }}>{n.path.split('/').pop()}{localOnlyPaths.includes(n.path) ? ' (local)' : ''}</button><button onClick={() => deleteLocalFile(n.path)}>🗑</button></div> : <div key={n.path} style={{ marginLeft: n.depth * 12, opacity: 0.9, display: 'flex', gap: 6, alignItems: 'center' }}><button onClick={() => createFile(n.path)}>📁 {n.path.split('/').pop()}</button><button onClick={() => createFile(n.path)}>+</button></div>)}</div></aside>
-        <section className='card editor'><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea value={activeDoc?.content || ''} onChange={(e) => { setDirty(true); setDocs(prev => prev.map(d => d.path === active ? { ...d, content: e.target.value } : d)); }} /><ReactMarkdown>{activeDoc?.content || ''}</ReactMarkdown></section>
+        <section className='card editor'><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea value={draftText} onChange={(e) => { setDirty(true); setDraftText(e.target.value); }} /><div style={{ marginBottom: 8 }}><button onClick={saveLocalEdit} disabled={!dirty}>Save Local</button></div><ReactMarkdown>{draftText || ''}</ReactMarkdown></section>
         <aside className='card'><h3>Backlinks</h3><ul>{backlinks.map((b) => <li key={b.path}>{b.path}</li>)}</ul></aside>
       </main>}
     </section>
