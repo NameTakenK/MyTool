@@ -39,3 +39,5 @@ npm run preview
 - **디자인은?**: 다크 테마 카드형 레이아웃으로 업데이트했습니다.
 
 - Obsidian 룩앤필을 반영한 다크 테마(좌측 Vault, 중앙 Editor/Preview, 우측 Backlinks/Outgoing/Metadata, 하단 Ask 패널)
+
+- 왼쪽 사이드바에서 `Files / Graph / Ask / Settings` 화면 전환 가능
