@@ -37,3 +37,5 @@ npm run preview
 - **입력은 어떻게 하나?**: `Wiki` 탭 중앙의 **Markdown Editor** 텍스트영역에 입력합니다.
 - **어디서 GitHub 셋팅해?**: 상단 `GitHub 설정` 탭에서 Owner/Repo/Branch/Token/WikiPath를 입력합니다.
 - **디자인은?**: 다크 테마 카드형 레이아웃으로 업데이트했습니다.
+
+- Obsidian 룩앤필을 반영한 다크 테마(좌측 Vault, 중앙 Editor/Preview, 우측 Backlinks/Outgoing/Metadata, 하단 Ask 패널)

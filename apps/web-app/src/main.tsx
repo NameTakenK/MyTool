@@ -58,7 +58,7 @@ function App() {
       <p className='hint'>현재는 MVP라 브라우저 메모리에만 저장됩니다. 실제 저장은 keychain/secure storage 연동 단계에서 구현합니다.</p>
     </section> : <main className='layout'>
       <aside className='card'>
-        <h3>문서 탐색</h3>
+        <h3>Vault</h3>
         <input placeholder='Search markdown...' value={search} onChange={(e)=>setSearch(e.target.value)} />
         <div className='list'>{filteredDocs.map((d)=><button key={d.path} className={d.path===active?'on':''} onClick={()=>setActive(d.path)}>{d.path}</button>)}</div>
       </aside>
@@ -73,6 +73,10 @@ function App() {
       <aside className='card'>
         <h3>Backlinks</h3>
         <ul>{backlinks.map((b)=><li key={b.path}>{b.path}</li>)}</ul>
+        <h3>Outgoing Links</h3>
+        <ul>{parseLinks(activeDoc.content).map((l)=><li key={l}>{l}</li>)}</ul>
+        <h3>Metadata</h3>
+        <ul><li>Path: {activeDoc.path}</li><li>Type: markdown</li></ul>
       </aside>
 
       <footer className='card ask'>
