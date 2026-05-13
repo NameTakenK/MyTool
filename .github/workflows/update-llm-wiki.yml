@@ -1,0 +1,20 @@
+name: update-llm-wiki
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: node scripts/generate-llm-wiki.mjs
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: 'chore(wiki): automated wiki index update'
+          title: 'chore(wiki): automated llm wiki refresh'
+          body: 'Automated repo scan/readme scan/module map refresh.'
+          branch: 'automation/update-llm-wiki'

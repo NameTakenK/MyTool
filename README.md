@@ -41,3 +41,17 @@ npm run start:portable
 1. Android Studio에서 `android/` 폴더 열기
 2. Gradle Sync
 3. `app` 실행
+
+
+## Web 앱 실행 (apps/web-app)
+```bash
+cd apps/web-app
+npm install
+npm run dev
+```
+
+빌드 확인:
+```bash
+cd apps/web-app
+npm run build
+```
