@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import './styles.css';
 
 type Doc = { path: string; content: string; zone: 'source' | 'wiki' };
-type Screen = 'files' | 'graph' | 'ask' | 'settings';
+type Screen = 'files' | 'graph' | 'askSearch' | 'settings';
 type GitHubConfig = {
   host: string;
   owner: string; repo: string; branch: string; token: string;
@@ -84,6 +84,7 @@ function App() {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [active, setActive] = useState('');
   const [question, setQuestion] = useState('');
+  const [askMatches, setAskMatches] = useState<Doc[]>([]);
   const [search, setSearch] = useState('');
   const [screen, setScreen] = useState<Screen>('files');
   const [backups, setBackups] = useState<BackupSnapshot[]>([]);
@@ -226,9 +227,11 @@ function App() {
   }, [active]);
 
   const ask = () => {
-    const related = docs.filter((d) => d.content.toLowerCase().includes(question.toLowerCase()));
+    const q = question.trim().toLowerCase();
+    const related = q ? docs.filter((d) => d.content.toLowerCase().includes(q) || d.path.toLowerCase().includes(q)) : [];
+    setAskMatches(related);
     if (!related.length) return '아직 LLM 모델 연동은 없고, 현재는 문서 검색 기반 답변만 제공합니다.';
-    return `현재는 로컬 검색 기반입니다(LLM 미연동).\n답변 근거 문서:\n${related.map((d) => `- ${d.path}`).join('\n')}`;
+    return `현재는 로컬 검색 기반입니다(LLM 미연동).\n검색된 문서: ${related.length}개`;
   };
 
 
@@ -251,7 +254,7 @@ function App() {
   return <div className='app'>
     <aside className='left-nav'>
       <h2>LLM Wiki (Web)</h2>
-      {(['files', 'graph', 'ask', 'settings'] as Screen[]).map((s) => <button key={s} className={screen === s ? 'on' : ''} onClick={() => setScreen(s)}>{s}</button>)}
+      {(['files', 'graph', 'askSearch', 'settings'] as Screen[]).map((s) => <button key={s} className={screen === s ? 'on' : ''} onClick={() => setScreen(s)}>{s === 'askSearch' ? 'ask & search' : s}</button>)}
       <button onClick={() => syncFromServer('manual')}>Sync</button>
       <small>{status}</small>
     </aside>
@@ -278,7 +281,7 @@ function App() {
         </svg>
       </section>}
 
-      {screen === 'ask' && <section className='card ask-only'><h3>Ask Wiki</h3><p>현재는 LLM 모델 연동 전 단계입니다. 문서 검색 기반으로 답합니다.</p><input value={question} onChange={(e) => setQuestion(e.target.value)} /><pre>{question ? ask() : '질문을 입력하세요.'}</pre></section>}
+      {screen === 'askSearch' && <section className='card ask-only'><h3>Ask & Search</h3><p>현재는 LLM 모델 연동 전 단계입니다. 문서 검색 기반으로 답합니다.</p><input value={question} onChange={(e) => { setQuestion(e.target.value); }} placeholder='질문/키워드 입력' /><div style={{ marginTop: 8, marginBottom: 8 }}><button onClick={ask}>Search in Docs</button></div><pre>{question ? 'Search 버튼을 눌러 결과를 확인하세요.' : '질문을 입력하세요.'}</pre><h4>검색 결과</h4><ul>{askMatches.map((d) => <li key={d.path}><button onClick={() => { setActive(d.path); setScreen('files'); }}>{d.path}</button></li>)}</ul></section>}
 
       {screen === 'files' && <main className='layout'>
         <aside className='card'><h3>Files (연동 후 표시)</h3><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder='Search' />
