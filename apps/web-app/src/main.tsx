@@ -143,10 +143,22 @@ function App() {
     if (!localDocs.length) return setStatus('no local changes to push');
     try {
       for (const doc of localDocs) {
-        await ghApi(cfg, doc.path, {
-          method: 'PUT',
-          body: JSON.stringify({ message: `web: push ${doc.path}`, content: b64(doc.content), branch: cfg.branch, sha: doc.sha })
-        });
+        try {
+          const res = await ghApi(cfg, doc.path, {
+            method: 'PUT',
+            body: JSON.stringify({ message: `web: push ${doc.path}`, content: b64(doc.content), branch: cfg.branch, sha: doc.sha })
+          });
+          setDocs((prev) => prev.map((d) => d.path === doc.path ? { ...d, sha: res.content?.sha || d.sha } : d));
+        } catch (e: any) {
+          const msg = String(e?.message || '');
+          if (!msg.includes('GitHub API 409')) throw e;
+          const latest = await ghApi(cfg, doc.path);
+          const retry = await ghApi(cfg, doc.path, {
+            method: 'PUT',
+            body: JSON.stringify({ message: `web: push(retry) ${doc.path}`, content: b64(doc.content), branch: cfg.branch, sha: latest.sha })
+          });
+          setDocs((prev) => prev.map((d) => d.path === doc.path ? { ...d, sha: retry.content?.sha || latest.sha } : d));
+        }
       }
       setLocalOnlyPaths([]);
       setStatus(`pushed local changes: ${localDocs.length}`);
