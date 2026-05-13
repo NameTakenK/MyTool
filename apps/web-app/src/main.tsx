@@ -92,13 +92,11 @@ function App() {
   const [active, setActive] = useState('');
   const [question, setQuestion] = useState('');
   const [askMatches, setAskMatches] = useState<Doc[]>([]);
-  const [search, setSearch] = useState('');
   const [screen, setScreen] = useState<Screen>('files');
   const [backups, setBackups] = useState<BackupSnapshot[]>([]);
   const [status, setStatus] = useState('연결 필요');
   const [connected, setConnected] = useState(false);
   const [cfgLoaded, setCfgLoaded] = useState(false);
-  const [newFileName, setNewFileName] = useState('docs/llm-wiki/new-note.md');
   const [dirty, setDirty] = useState(false);
   const [localOnlyPaths, setLocalOnlyPaths] = useState<string[]>([]);
   const [cfg, setCfg] = useState<GitHubConfig>({
@@ -110,7 +108,6 @@ function App() {
   const didAutoSync = useRef(false);
 
   const activeDoc = docs.find((d) => d.path === active) ?? docs[0];
-  const filteredDocs = useMemo(() => docs.filter((d) => d.path.toLowerCase().includes(search.toLowerCase())), [docs, search]);
   const backlinks = useMemo(() => docs.filter((d) => d.path !== active && parseLinks(d.content).some((l) => active.includes(l.replace('./', '')))), [docs, active]);
 
   const syncFromServer = async (trigger: 'startup' | 'manual') => {
@@ -206,11 +203,13 @@ function App() {
     }
   };
 
-  const createFile = () => {
-    if (!newFileName.endsWith('.md')) return setStatus('file must end with .md');
-    const safe = newFileName.replace(/^\/+/, '').replace(/\.\./g, '').trim();
+  const createFile = (baseDir: string) => {
+    const input = window.prompt('새 파일명 (.md)', 'new-note.md');
+    if (!input) return;
+    if (!input.endsWith('.md')) return setStatus('file must end with .md');
+    const safe = input.replace(/^\/+/, '').replace(/\.\./g, '').trim();
     if (!safe) return setStatus('invalid file name');
-    const path = safe;
+    const path = `${baseDir}/${safe}`.replace(/^\/+/, '');
     if (docs.some((d) => d.path === path)) return setStatus('file already exists');
     const zone: 'source' | 'wiki' = path.startsWith(cfg.sourcePath) ? 'source' : 'wiki';
     const newDoc: Doc = { path, content: `# ${safe.replace('.md', '')}\n`, zone, sha: undefined };
@@ -424,13 +423,8 @@ function App() {
       {screen === 'askSearch' && <section className='card ask-only'><h3>Ask & Search</h3><p>검색 + LLM 답변(선택 provider) 지원</p><input value={question} onChange={(e) => { setQuestion(e.target.value); }} placeholder='질문/키워드 입력' /><div style={{ marginTop: 8, marginBottom: 8, display: 'flex', gap: 8 }}><button onClick={ask}>Search in Docs</button><button onClick={askWithLlm}>Ask LLM</button></div><pre>{question ? 'Search 또는 Ask LLM 버튼을 눌러 결과를 확인하세요.' : '질문을 입력하세요.'}</pre><h4>검색 결과</h4><ul>{askMatches.map((d) => <li key={d.path}><button onClick={() => { setActive(d.path); setScreen('files'); }}>{d.path}</button></li>)}</ul></section>}
 
       {screen === 'files' && <main className='layout'>
-        <aside className='card'><h3>Files (연동 후 표시)</h3><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder='Search' />
-          <small>local only: {localOnlyPaths.length} (Save to GitHub 전까지 Sync해도 유지)</small>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-            <input value={newFileName} onChange={(e) => setNewFileName(e.target.value)} placeholder='docs/llm-wiki/new-note.md' />
-            <button onClick={createFile}>New .md</button>
-          </div>
-          <div className='list'>{treeItems.map((n) => n.isFile ? <div key={n.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><button className={n.path === active ? 'on' : ''} onClick={() => setActive(n.path)} style={{ marginLeft: n.depth * 12 }}>{n.path.split('/').pop()}{localOnlyPaths.includes(n.path) ? ' (local)' : ''}</button><button onClick={() => deleteLocalFile(n.path)}>🗑</button></div> : <div key={n.path} style={{ marginLeft: n.depth * 12, opacity: 0.7 }}>📁 {n.path.split('/').pop()}</div>)}</div></aside>
+        <aside className='card'><h3>Files</h3>
+          <div className='list'>{treeItems.map((n) => n.isFile ? <div key={n.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><button className={n.path === active ? 'on' : ''} onClick={() => setActive(n.path)} style={{ marginLeft: n.depth * 12 }}>{n.path.split('/').pop()}{localOnlyPaths.includes(n.path) ? ' (local)' : ''}</button><button onClick={() => deleteLocalFile(n.path)}>🗑</button></div> : <div key={n.path} style={{ marginLeft: n.depth * 12, opacity: 0.9, display: 'flex', gap: 6, alignItems: 'center' }}><button onClick={() => createFile(n.path)}>📁 {n.path.split('/').pop()}</button><button onClick={() => createFile(n.path)}>+</button></div>)}</div></aside>
         <section className='card editor'><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea value={activeDoc?.content || ''} onChange={(e) => { setDirty(true); setDocs(prev => prev.map(d => d.path === active ? { ...d, content: e.target.value } : d)); }} /><div style={{ marginBottom: 8, display: 'flex', gap: 8 }}><button onClick={saveActiveToGitHub}>Save to GitHub</button><button onClick={deleteActiveFromGitHub}>Delete from GitHub</button></div><ReactMarkdown>{activeDoc?.content || ''}</ReactMarkdown></section>
         <aside className='card'><h3>Backlinks</h3><ul>{backlinks.map((b) => <li key={b.path}>{b.path}</li>)}</ul></aside>
       </main>}
