@@ -22,6 +22,8 @@ type GraphNode = { id: string; x: number; y: number };
 const CFG_KEY = 'llm-wiki-github-config';
 const LLM_CFG_KEY = 'llm-wiki-llm-config';
 const PROMPT_REF_KEY = 'llm-wiki-prompt-ref';
+const DOCS_CACHE_KEY = 'llm-wiki-local-docs';
+const LOCAL_ONLY_KEY = 'llm-wiki-local-only';
 const normalizeHost = (host: string) => host.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
 const getApiBase = (host: string) => normalizeHost(host) === 'github.com' || !normalizeHost(host) ? 'https://api.github.com' : `https://${normalizeHost(host)}/api/v3`;
 const b64 = (text: string) => {
@@ -154,9 +156,6 @@ function App() {
   };
 
   const saveSettingsAndConnect = async () => {
-    localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
-    localStorage.setItem(LLM_CFG_KEY, JSON.stringify(llmCfg));
-    localStorage.setItem(PROMPT_REF_KEY, promptRef);
     setStatus('settings saved');
     await syncFromServer('manual');
   };
@@ -219,52 +218,9 @@ function App() {
     setStatus(`created local file: ${path}`);
   };
 
-  const saveActiveToGitHub = async () => {
-    if (!connected || !activeDoc) return setStatus('connect first');
-    try {
-      const res = await ghApi(cfg, activeDoc.path, {
-        method: 'PUT',
-        body: JSON.stringify({
-          message: `web: save ${activeDoc.path}`,
-          content: b64(activeDoc.content),
-          branch: cfg.branch,
-          sha: activeDoc.sha
-        })
-      });
-      setDocs((prev) => prev.map((d) => d.path === activeDoc.path ? { ...d, sha: res.content?.sha || d.sha } : d));
-      setStatus(`saved to github: ${activeDoc.path}`);
-      setLocalOnlyPaths((prev) => prev.filter((p) => p !== activeDoc.path));
-      setDirty(false);
-      await syncFromServer('manual');
-    } catch (e: any) {
-      setStatus(`save failed: ${e.message}`);
-    }
-  };
+  
 
-  const deleteActiveFromGitHub = async () => {
-    if (!connected || !activeDoc) return setStatus('connect first');
-    const ok = window.confirm(`Delete ${activeDoc.path} from GitHub?`);
-    if (!ok) return;
-    try {
-      await ghApi(cfg, activeDoc.path, {
-        method: 'DELETE',
-        body: JSON.stringify({
-          message: `web: delete ${activeDoc.path}`,
-          branch: cfg.branch,
-          sha: activeDoc.sha
-        })
-      });
-      setStatus(`deleted from github: ${activeDoc.path}`);
-      const remaining = docs.filter((d) => d.path !== activeDoc.path);
-      setDocs(remaining);
-      setLocalOnlyPaths((prev) => prev.filter((p) => p !== activeDoc.path));
-      setActive(remaining[0]?.path ?? '');
-      setDirty(false);
-      await syncFromServer('manual');
-    } catch (e: any) {
-      setStatus(`delete failed: ${e.message}`);
-    }
-  };
+  
 
   const deleteLocalFile = (path: string) => {
     const ok = window.confirm(`Delete local file from editor list?\n${path}`);
@@ -308,6 +264,10 @@ function App() {
       if (llmRaw) setLlmCfg((prev) => ({ ...prev, ...(JSON.parse(llmRaw) as Partial<LlmConfig>) }));
       const promptRefRaw = localStorage.getItem(PROMPT_REF_KEY);
       if (promptRefRaw) setPromptRef(promptRefRaw);
+      const docsRaw = localStorage.getItem(DOCS_CACHE_KEY);
+      if (docsRaw) setDocs(JSON.parse(docsRaw) as Doc[]);
+      const localOnlyRaw = localStorage.getItem(LOCAL_ONLY_KEY);
+      if (localOnlyRaw) setLocalOnlyPaths(JSON.parse(localOnlyRaw) as string[]);
       setStatus('loaded saved settings');
     } catch {
       setStatus('failed to load saved settings');
@@ -315,6 +275,23 @@ function App() {
       setCfgLoaded(true);
     }
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+  }, [cfg]);
+
+  useEffect(() => {
+    localStorage.setItem(LLM_CFG_KEY, JSON.stringify(llmCfg));
+  }, [llmCfg]);
+
+  useEffect(() => {
+    localStorage.setItem(PROMPT_REF_KEY, promptRef);
+  }, [promptRef]);
+
+  useEffect(() => {
+    localStorage.setItem(DOCS_CACHE_KEY, JSON.stringify(docs));
+    localStorage.setItem(LOCAL_ONLY_KEY, JSON.stringify(localOnlyPaths));
+  }, [docs, localOnlyPaths]);
 
   useEffect(() => {
     if (!cfgLoaded || didAutoSync.current) return;
@@ -425,7 +402,7 @@ function App() {
       {screen === 'files' && <main className='layout'>
         <aside className='card'><h3>Files</h3>
           <div className='list'>{treeItems.map((n) => n.isFile ? <div key={n.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><button className={n.path === active ? 'on' : ''} onClick={() => setActive(n.path)} style={{ marginLeft: n.depth * 12 }}>{n.path.split('/').pop()}{localOnlyPaths.includes(n.path) ? ' (local)' : ''}</button><button onClick={() => deleteLocalFile(n.path)}>🗑</button></div> : <div key={n.path} style={{ marginLeft: n.depth * 12, opacity: 0.9, display: 'flex', gap: 6, alignItems: 'center' }}><button onClick={() => createFile(n.path)}>📁 {n.path.split('/').pop()}</button><button onClick={() => createFile(n.path)}>+</button></div>)}</div></aside>
-        <section className='card editor'><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea value={activeDoc?.content || ''} onChange={(e) => { setDirty(true); setDocs(prev => prev.map(d => d.path === active ? { ...d, content: e.target.value } : d)); }} /><div style={{ marginBottom: 8, display: 'flex', gap: 8 }}><button onClick={saveActiveToGitHub}>Save to GitHub</button><button onClick={deleteActiveFromGitHub}>Delete from GitHub</button></div><ReactMarkdown>{activeDoc?.content || ''}</ReactMarkdown></section>
+        <section className='card editor'><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea value={activeDoc?.content || ''} onChange={(e) => { setDirty(true); setDocs(prev => prev.map(d => d.path === active ? { ...d, content: e.target.value } : d)); }} /><ReactMarkdown>{activeDoc?.content || ''}</ReactMarkdown></section>
         <aside className='card'><h3>Backlinks</h3><ul>{backlinks.map((b) => <li key={b.path}>{b.path}</li>)}</ul></aside>
       </main>}
     </section>
