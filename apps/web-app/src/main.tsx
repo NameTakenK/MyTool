@@ -97,6 +97,10 @@ function App() {
   const [screen, setScreen] = useState<Screen>('files');
   const [backups, setBackups] = useState<BackupSnapshot[]>([]);
   const [status, setStatus] = useState('연결 필요');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
+  const [refreshEnabled, setRefreshEnabled] = useState(true);
+  const [lastRemoteSignature, setLastRemoteSignature] = useState('');
   const [connected, setConnected] = useState(false);
   const [cfgLoaded, setCfgLoaded] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -119,21 +123,32 @@ function App() {
       setStatus('config required: host/owner/repo/token');
       return;
     }
+    setIsRefreshing(true);
     setStatus(`syncing (${trigger})`);
     setBackups((prev) => [{ at: new Date().toISOString(), docs: structuredClone(docs) }, ...prev].slice(0, 20));
     try {
       const sourceDocs = await loadMarkdownTree(cfg, cfg.sourcePath, 'source');
       const wikiDocs = await loadMarkdownTree(cfg, cfg.wikiPath, 'wiki');
       const remoteMerged = [...sourceDocs, ...wikiDocs];
+      const remoteSig = remoteMerged.map((d) => `${d.path}:${d.sha || ''}`).sort().join('|');
       const localOnlyDocs = docs.filter((d) => localOnlyPaths.includes(d.path));
       const merged = [...remoteMerged, ...localOnlyDocs.filter((local) => !remoteMerged.some((r) => r.path === local.path))];
       setDocs(merged);
       setActive(merged[0]?.path ?? '');
       setConnected(true);
-      setStatus(`synced (${trigger})`);
+      if (remoteSig === lastRemoteSignature) {
+        setStatus(`synced (${trigger}) - no server changes`);
+        setRefreshEnabled(false);
+      } else {
+        setStatus(`synced (${trigger})`);
+        setRefreshEnabled(false);
+        setLastRemoteSignature(remoteSig);
+      }
     } catch (e: any) {
       setConnected(false);
       setStatus(`sync failed: ${e.message}`);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -142,6 +157,7 @@ function App() {
     const localDocs = docs.filter((d) => localOnlyPaths.includes(d.path));
     if (!localDocs.length) return setStatus('no local changes to push');
     try {
+      setIsPushing(true);
       for (const doc of localDocs) {
         try {
           const res = await ghApi(cfg, doc.path, {
@@ -162,9 +178,12 @@ function App() {
       }
       setLocalOnlyPaths([]);
       setStatus(`pushed local changes: ${localDocs.length}`);
+      setRefreshEnabled(true);
       await syncFromServer('manual');
     } catch (e: any) {
       setStatus(`push failed: ${e.message}`);
+    } finally {
+      setIsPushing(false);
     }
   };
 
@@ -230,6 +249,20 @@ function App() {
     setActive(path);
     setStatus(`created local file: ${path}`);
     setDraftText(newDoc.content);
+  };
+
+  const renameFile = (oldPath: string) => {
+    const oldName = oldPath.split('/').pop() || '';
+    const nextName = window.prompt('새 파일명 (.md)', oldName);
+    if (!nextName || nextName === oldName) return;
+    if (!nextName.endsWith('.md')) return setStatus('file must end with .md');
+    const dir = oldPath.split('/').slice(0, -1).join('/');
+    const newPath = `${dir}/${nextName}`;
+    if (docs.some((d) => d.path === newPath)) return setStatus('target already exists');
+    setDocs((prev) => prev.map((d) => d.path === oldPath ? { ...d, path: newPath, sha: undefined } : d));
+    setLocalOnlyPaths((prev) => Array.from(new Set([...prev.filter((p) => p !== oldPath), newPath])));
+    if (active === oldPath) setActive(newPath);
+    setStatus(`renamed local: ${oldPath} -> ${newPath}`);
   };
 
   const saveLocalEdit = () => {
@@ -327,6 +360,10 @@ function App() {
     setDirty(false);
   }, [active]);
 
+  useEffect(() => {
+    if (localOnlyPaths.length > 0) setRefreshEnabled(true);
+  }, [localOnlyPaths.length]);
+
   const ask = () => {
     const q = question.trim().toLowerCase();
     const related = q ? docs.filter((d) => d.content.toLowerCase().includes(q) || d.path.toLowerCase().includes(q)) : [];
@@ -367,8 +404,8 @@ function App() {
     <aside className='left-nav'>
       <h2>LLM Wiki (Web)</h2>
       {(['files', 'graph', 'askSearch', 'settings'] as Screen[]).map((s) => <button key={s} className={screen === s ? 'on' : ''} onClick={() => setScreen(s)}>{s === 'askSearch' ? 'ask & search' : s}</button>)}
-      <button onClick={() => syncFromServer('manual')}>Refresh from Server</button>
-      <button onClick={pushLocalToServer}>Push Local → Server</button>
+      <button onClick={() => syncFromServer('manual')} disabled={!refreshEnabled || isRefreshing}>{isRefreshing ? 'Refreshing...' : 'Refresh from Server'}</button>
+      <button onClick={pushLocalToServer} disabled={localOnlyPaths.length === 0 || isPushing}>{isPushing ? 'Pushing...' : 'Push Local → Server'}</button>
       <small>{status}</small>
     </aside>
 
@@ -424,7 +461,7 @@ function App() {
 
       {screen === 'files' && <main className='layout'>
         <aside className='card'><h3>Files</h3>
-          <div className='list'>{treeItems.map((n) => n.isFile ? <div key={n.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><button className={n.path === active ? 'on' : ''} onClick={() => setActive(n.path)} style={{ marginLeft: n.depth * 12 }}>{n.path.split('/').pop()}{localOnlyPaths.includes(n.path) ? ' (local)' : ''}</button><button onClick={() => deleteLocalFile(n.path)}>🗑</button></div> : <div key={n.path} style={{ marginLeft: n.depth * 12, opacity: 0.9, display: 'flex', gap: 6, alignItems: 'center' }}><button onClick={() => createFile(n.path)}>📁 {n.path.split('/').pop()}</button><button onClick={() => createFile(n.path)}>+</button></div>)}</div></aside>
+          <div className='list'>{treeItems.map((n) => n.isFile ? <div key={n.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><button className={n.path === active ? 'on' : ''} onClick={() => setActive(n.path)} style={{ marginLeft: n.depth * 12 }}>{n.path.split('/').pop()}{localOnlyPaths.includes(n.path) ? ' (local)' : ''}</button><button onClick={() => renameFile(n.path)}>✏️</button><button onClick={() => deleteLocalFile(n.path)}>🗑</button></div> : <div key={n.path} style={{ marginLeft: n.depth * 12, opacity: 0.9, display: 'flex', gap: 6, alignItems: 'center' }}><button onClick={() => createFile(n.path)}>📁 {n.path.split('/').pop()}</button><button onClick={() => createFile(n.path)}>+</button></div>)}</div></aside>
         <section className='card editor'><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea value={draftText} onChange={(e) => { setDirty(true); setDraftText(e.target.value); }} /><div style={{ marginBottom: 8 }}><button onClick={saveLocalEdit} disabled={!dirty}>Save Local</button></div><ReactMarkdown>{draftText || ''}</ReactMarkdown></section>
         <aside className='card'><h3>Backlinks</h3><ul>{backlinks.map((b) => <li key={b.path}>{b.path}</li>)}</ul></aside>
       </main>}
