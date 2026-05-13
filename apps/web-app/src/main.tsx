@@ -93,6 +93,7 @@ function App() {
   const [newFileName, setNewFileName] = useState('new-note.md');
   const [newFileZone, setNewFileZone] = useState<NewFileZone>('source');
   const [dirty, setDirty] = useState(false);
+  const [localOnlyPaths, setLocalOnlyPaths] = useState<string[]>([]);
   const [cfg, setCfg] = useState<GitHubConfig>({
     host: 'github.com', owner: '', repo: '', branch: 'main', token: '',
     sourcePath: 'docs/source', wikiPath: 'docs/llm-wiki', backupPath: 'docs/backups'
@@ -114,7 +115,9 @@ function App() {
     try {
       const sourceDocs = await loadMarkdownTree(cfg, cfg.sourcePath, 'source');
       const wikiDocs = await loadMarkdownTree(cfg, cfg.wikiPath, 'wiki');
-      const merged = [...sourceDocs, ...wikiDocs];
+      const remoteMerged = [...sourceDocs, ...wikiDocs];
+      const localOnlyDocs = docs.filter((d) => localOnlyPaths.includes(d.path));
+      const merged = [...remoteMerged, ...localOnlyDocs.filter((local) => !remoteMerged.some((r) => r.path === local.path))];
       setDocs(merged);
       setActive(merged[0]?.path ?? '');
       setConnected(true);
@@ -140,6 +143,7 @@ function App() {
     if (docs.some((d) => d.path === path)) return setStatus('file already exists');
     const newDoc: Doc = { path, content: `# ${safe.replace('.md', '')}\n`, zone: newFileZone };
     setDocs((prev) => [newDoc, ...prev]);
+    setLocalOnlyPaths((prev) => Array.from(new Set([...prev, path])));
     setActive(path);
     setStatus(`created local file: ${path}`);
   };
@@ -159,6 +163,7 @@ function App() {
         })
       });
       setStatus(`saved to github: ${activeDoc.path}`);
+      setLocalOnlyPaths((prev) => prev.filter((p) => p !== activeDoc.path));
       setDirty(false);
       await syncFromServer('manual');
     } catch (e: any) {
@@ -183,6 +188,7 @@ function App() {
       setStatus(`deleted from github: ${activeDoc.path}`);
       const remaining = docs.filter((d) => d.path !== activeDoc.path);
       setDocs(remaining);
+      setLocalOnlyPaths((prev) => prev.filter((p) => p !== activeDoc.path));
       setActive(remaining[0]?.path ?? '');
       setDirty(false);
       await syncFromServer('manual');
@@ -276,6 +282,7 @@ function App() {
 
       {screen === 'files' && <main className='layout'>
         <aside className='card'><h3>Files (연동 후 표시)</h3><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder='Search' />
+          <small>local only: {localOnlyPaths.length} (Save to GitHub 전까지 Sync해도 유지)</small>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <select value={newFileZone} onChange={(e) => setNewFileZone(e.target.value as NewFileZone)}>
               <option value='source'>source</option>
@@ -284,7 +291,7 @@ function App() {
             <input value={newFileName} onChange={(e) => setNewFileName(e.target.value)} placeholder='new-note.md' />
             <button onClick={createFile}>New .md</button>
           </div>
-          <div className='list'>{filteredDocs.map((d) => <button key={d.path} className={d.path === active ? 'on' : ''} onClick={() => setActive(d.path)}>{d.zone} | {d.path}</button>)}</div></aside>
+          <div className='list'>{filteredDocs.map((d) => <button key={d.path} className={d.path === active ? 'on' : ''} onClick={() => setActive(d.path)}>{d.zone} | {d.path}{localOnlyPaths.includes(d.path) ? ' (local)' : ''}</button>)}</div></aside>
         <section className='card editor'><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea value={activeDoc?.content || ''} onChange={(e) => { setDirty(true); setDocs(prev => prev.map(d => d.path === active ? { ...d, content: e.target.value } : d)); }} /><div style={{ marginBottom: 8, display: 'flex', gap: 8 }}><button onClick={saveActiveToGitHub}>Save to GitHub</button><button onClick={deleteActiveFromGitHub}>Delete from GitHub</button></div><ReactMarkdown>{activeDoc?.content || ''}</ReactMarkdown></section>
         <aside className='card'><h3>Backlinks</h3><ul>{backlinks.map((b) => <li key={b.path}>{b.path}</li>)}</ul></aside>
       </main>}
