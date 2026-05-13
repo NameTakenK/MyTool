@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import './styles.css';
 
-type Doc = { path: string; content: string; zone: 'source' | 'wiki' };
+type Doc = { path: string; content: string; zone: 'source' | 'wiki'; sha?: string };
 type Screen = 'files' | 'graph' | 'askSearch' | 'settings';
 type GitHubConfig = {
   host: string;
@@ -81,7 +81,7 @@ async function loadMarkdownTree(config: GitHubConfig, rootPath: string, zone: 's
     if (item.type === 'dir') docs.push(...await loadMarkdownTree(config, item.path, zone));
     else if (item.type === 'file' && item.name.endsWith('.md')) {
       const file = await ghApi(config, item.path);
-      docs.push({ path: item.path, content: unb64((file.content || '').replace(/\n/g, '')), zone });
+      docs.push({ path: item.path, content: unb64((file.content || '').replace(/\n/g, '')), zone, sha: file.sha });
     }
   }
   return docs;
@@ -145,7 +145,7 @@ function App() {
       for (const doc of localDocs) {
         await ghApi(cfg, doc.path, {
           method: 'PUT',
-          body: JSON.stringify({ message: `web: push ${doc.path}`, content: b64(doc.content), branch: cfg.branch })
+          body: JSON.stringify({ message: `web: push ${doc.path}`, content: b64(doc.content), branch: cfg.branch, sha: doc.sha })
         });
       }
       setLocalOnlyPaths([]);
@@ -213,7 +213,7 @@ function App() {
     const path = safe;
     if (docs.some((d) => d.path === path)) return setStatus('file already exists');
     const zone: 'source' | 'wiki' = path.startsWith(cfg.sourcePath) ? 'source' : 'wiki';
-    const newDoc: Doc = { path, content: `# ${safe.replace('.md', '')}\n`, zone };
+    const newDoc: Doc = { path, content: `# ${safe.replace('.md', '')}\n`, zone, sha: undefined };
     setDocs((prev) => [newDoc, ...prev]);
     setLocalOnlyPaths((prev) => Array.from(new Set([...prev, path])));
     setActive(path);
@@ -223,17 +223,16 @@ function App() {
   const saveActiveToGitHub = async () => {
     if (!connected || !activeDoc) return setStatus('connect first');
     try {
-      let sha: string | undefined;
-      try { sha = (await ghApi(cfg, activeDoc.path)).sha; } catch { sha = undefined; }
-      await ghApi(cfg, activeDoc.path, {
+      const res = await ghApi(cfg, activeDoc.path, {
         method: 'PUT',
         body: JSON.stringify({
           message: `web: save ${activeDoc.path}`,
           content: b64(activeDoc.content),
           branch: cfg.branch,
-          sha
+          sha: activeDoc.sha
         })
       });
+      setDocs((prev) => prev.map((d) => d.path === activeDoc.path ? { ...d, sha: res.content?.sha || d.sha } : d));
       setStatus(`saved to github: ${activeDoc.path}`);
       setLocalOnlyPaths((prev) => prev.filter((p) => p !== activeDoc.path));
       setDirty(false);
@@ -248,13 +247,12 @@ function App() {
     const ok = window.confirm(`Delete ${activeDoc.path} from GitHub?`);
     if (!ok) return;
     try {
-      const existing = await ghApi(cfg, activeDoc.path);
       await ghApi(cfg, activeDoc.path, {
         method: 'DELETE',
         body: JSON.stringify({
           message: `web: delete ${activeDoc.path}`,
           branch: cfg.branch,
-          sha: existing.sha
+          sha: activeDoc.sha
         })
       });
       setStatus(`deleted from github: ${activeDoc.path}`);
