@@ -18,7 +18,6 @@ type LlmConfig = {
 };
 type BackupSnapshot = { at: string; docs: Doc[] };
 type GraphNode = { id: string; x: number; y: number };
-type NewFileZone = 'source' | 'wiki';
 
 const CFG_KEY = 'llm-wiki-github-config';
 const LLM_CFG_KEY = 'llm-wiki-llm-config';
@@ -99,8 +98,7 @@ function App() {
   const [status, setStatus] = useState('연결 필요');
   const [connected, setConnected] = useState(false);
   const [cfgLoaded, setCfgLoaded] = useState(false);
-  const [newFileName, setNewFileName] = useState('new-note.md');
-  const [newFileZone, setNewFileZone] = useState<NewFileZone>('source');
+  const [newFileName, setNewFileName] = useState('docs/llm-wiki/new-note.md');
   const [dirty, setDirty] = useState(false);
   const [localOnlyPaths, setLocalOnlyPaths] = useState<string[]>([]);
   const [cfg, setCfg] = useState<GitHubConfig>({
@@ -136,6 +134,25 @@ function App() {
     } catch (e: any) {
       setConnected(false);
       setStatus(`sync failed: ${e.message}`);
+    }
+  };
+
+  const pushLocalToServer = async () => {
+    if (!connected) return setStatus('connect first');
+    const localDocs = docs.filter((d) => localOnlyPaths.includes(d.path));
+    if (!localDocs.length) return setStatus('no local changes to push');
+    try {
+      for (const doc of localDocs) {
+        await ghApi(cfg, doc.path, {
+          method: 'PUT',
+          body: JSON.stringify({ message: `web: push ${doc.path}`, content: b64(doc.content), branch: cfg.branch })
+        });
+      }
+      setLocalOnlyPaths([]);
+      setStatus(`pushed local changes: ${localDocs.length}`);
+      await syncFromServer('manual');
+    } catch (e: any) {
+      setStatus(`push failed: ${e.message}`);
     }
   };
 
@@ -193,10 +210,10 @@ function App() {
     if (!newFileName.endsWith('.md')) return setStatus('file must end with .md');
     const safe = newFileName.replace(/^\/+/, '').replace(/\.\./g, '').trim();
     if (!safe) return setStatus('invalid file name');
-    const root = newFileZone === 'source' ? cfg.sourcePath : cfg.wikiPath;
-    const path = `${root}/${safe}`;
+    const path = safe;
     if (docs.some((d) => d.path === path)) return setStatus('file already exists');
-    const newDoc: Doc = { path, content: `# ${safe.replace('.md', '')}\n`, zone: newFileZone };
+    const zone: 'source' | 'wiki' = path.startsWith(cfg.sourcePath) ? 'source' : 'wiki';
+    const newDoc: Doc = { path, content: `# ${safe.replace('.md', '')}\n`, zone };
     setDocs((prev) => [newDoc, ...prev]);
     setLocalOnlyPaths((prev) => Array.from(new Set([...prev, path])));
     setActive(path);
@@ -251,6 +268,35 @@ function App() {
       setStatus(`delete failed: ${e.message}`);
     }
   };
+
+  const deleteLocalFile = (path: string) => {
+    const ok = window.confirm(`Delete local file from editor list?\n${path}`);
+    if (!ok) return;
+    const remaining = docs.filter((d) => d.path !== path);
+    setDocs(remaining);
+    setLocalOnlyPaths((prev) => prev.filter((p) => p !== path));
+    if (active === path) setActive(remaining[0]?.path ?? '');
+    setStatus(`deleted local file: ${path}`);
+  };
+
+  const treeItems = useMemo(() => {
+    const out: { path: string; depth: number; isFile: boolean }[] = [];
+    const dirs = new Set<string>();
+    const files = [...docs].map((d) => d.path).sort();
+    for (const file of files) {
+      const parts = file.split('/');
+      let cur = '';
+      parts.forEach((p, i) => {
+        cur = cur ? `${cur}/${p}` : p;
+        if (i < parts.length - 1 && !dirs.has(cur)) {
+          dirs.add(cur);
+          out.push({ path: cur, depth: i, isFile: false });
+        }
+      });
+      out.push({ path: file, depth: parts.length - 1, isFile: true });
+    }
+    return out;
+  }, [docs]);
 
   useEffect(() => {
     const raw = localStorage.getItem(CFG_KEY);
@@ -325,6 +371,7 @@ function App() {
       <h2>LLM Wiki (Web)</h2>
       {(['files', 'graph', 'askSearch', 'settings'] as Screen[]).map((s) => <button key={s} className={screen === s ? 'on' : ''} onClick={() => setScreen(s)}>{s === 'askSearch' ? 'ask & search' : s}</button>)}
       <button onClick={() => syncFromServer('manual')}>Refresh from Server</button>
+      <button onClick={pushLocalToServer}>Push Local → Server</button>
       <small>{status}</small>
     </aside>
 
@@ -382,14 +429,10 @@ function App() {
         <aside className='card'><h3>Files (연동 후 표시)</h3><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder='Search' />
           <small>local only: {localOnlyPaths.length} (Save to GitHub 전까지 Sync해도 유지)</small>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-            <select value={newFileZone} onChange={(e) => setNewFileZone(e.target.value as NewFileZone)}>
-              <option value='source'>source</option>
-              <option value='wiki'>wiki</option>
-            </select>
-            <input value={newFileName} onChange={(e) => setNewFileName(e.target.value)} placeholder='new-note.md' />
+            <input value={newFileName} onChange={(e) => setNewFileName(e.target.value)} placeholder='docs/llm-wiki/new-note.md' />
             <button onClick={createFile}>New .md</button>
           </div>
-          <div className='list'>{filteredDocs.map((d) => <button key={d.path} className={d.path === active ? 'on' : ''} onClick={() => setActive(d.path)}>{d.zone} | {d.path}{localOnlyPaths.includes(d.path) ? ' (local)' : ''}</button>)}</div></aside>
+          <div className='list'>{treeItems.map((n) => n.isFile ? <div key={n.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><button className={n.path === active ? 'on' : ''} onClick={() => setActive(n.path)} style={{ marginLeft: n.depth * 12 }}>{n.path.split('/').pop()}{localOnlyPaths.includes(n.path) ? ' (local)' : ''}</button><button onClick={() => deleteLocalFile(n.path)}>🗑</button></div> : <div key={n.path} style={{ marginLeft: n.depth * 12, opacity: 0.7 }}>📁 {n.path.split('/').pop()}</div>)}</div></aside>
         <section className='card editor'><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea value={activeDoc?.content || ''} onChange={(e) => { setDirty(true); setDocs(prev => prev.map(d => d.path === active ? { ...d, content: e.target.value } : d)); }} /><div style={{ marginBottom: 8, display: 'flex', gap: 8 }}><button onClick={saveActiveToGitHub}>Save to GitHub</button><button onClick={deleteActiveFromGitHub}>Delete from GitHub</button></div><ReactMarkdown>{activeDoc?.content || ''}</ReactMarkdown></section>
         <aside className='card'><h3>Backlinks</h3><ul>{backlinks.map((b) => <li key={b.path}>{b.path}</li>)}</ul></aside>
       </main>}
