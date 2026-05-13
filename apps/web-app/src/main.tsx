@@ -22,6 +22,7 @@ type NewFileZone = 'source' | 'wiki';
 
 const CFG_KEY = 'llm-wiki-github-config';
 const LLM_CFG_KEY = 'llm-wiki-llm-config';
+const PROMPT_REF_KEY = 'llm-wiki-prompt-ref';
 const normalizeHost = (host: string) => host.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
 const getApiBase = (host: string) => normalizeHost(host) === 'github.com' || !normalizeHost(host) ? 'https://api.github.com' : `https://${normalizeHost(host)}/api/v3`;
 const b64 = (text: string) => {
@@ -107,6 +108,7 @@ function App() {
     sourcePath: 'docs/source', wikiPath: 'docs/llm-wiki', backupPath: 'docs/backups'
   });
   const [llmCfg, setLlmCfg] = useState<LlmConfig>({ provider: 'openai', apiKey: '', model: 'gpt-4.1-mini' });
+  const [promptRef, setPromptRef] = useState('https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f');
   const didAutoSync = useRef(false);
 
   const activeDoc = docs.find((d) => d.path === active) ?? docs[0];
@@ -140,6 +142,7 @@ function App() {
   const saveSettingsAndConnect = async () => {
     localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
     localStorage.setItem(LLM_CFG_KEY, JSON.stringify(llmCfg));
+    localStorage.setItem(PROMPT_REF_KEY, promptRef);
     setStatus('settings saved');
     await syncFromServer('manual');
   };
@@ -173,6 +176,17 @@ function App() {
     if (!res.ok) throw new Error(`Gemini API ${res.status}`);
     const data = await res.json();
     return data?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data);
+  };
+
+  const buildWikiPrompt = () => `너는 LLM Wiki 콘텐츠 에디터다.\n\n[필수 참고]\n- ${promptRef}\n\n[경로 고정]\n- 입력 소스(읽기 전용): ${cfg.sourcePath}\n- 출력 위키(수정 대상): ${cfg.wikiPath}\n- 메인 인덱스: ${cfg.wikiPath}/index.md\n- 작업 로그: ${cfg.wikiPath}/log.md\n\n[금지]\n- 웹앱 코드 수정 금지\n- Obsidian 설치/설정/연동 금지\n- source 원문 수정 금지\n\n[작업]\n1) source 스캔 후 주제/엔티티 추출\n2) wiki 문서 생성/갱신\n3) index.md 허브 정리\n4) 상호 링크 보강/중복 통합\n5) log.md 변경 기록\n\n[출력]\n- 변경 파일 목록\n- 신규 문서 목록\n- 통합/삭제 목록\n- TODO 5개\n`;
+
+  const copyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(buildWikiPrompt());
+      setStatus('wiki prompt copied');
+    } catch {
+      setStatus('failed to copy prompt');
+    }
   };
 
   const createFile = () => {
@@ -249,6 +263,8 @@ function App() {
       setCfg((prev) => ({ ...prev, ...parsed, host: parsed.host || prev.host }));
       const llmRaw = localStorage.getItem(LLM_CFG_KEY);
       if (llmRaw) setLlmCfg((prev) => ({ ...prev, ...(JSON.parse(llmRaw) as Partial<LlmConfig>) }));
+      const promptRefRaw = localStorage.getItem(PROMPT_REF_KEY);
+      if (promptRefRaw) setPromptRef(promptRefRaw);
       setStatus('loaded saved settings');
     } catch {
       setStatus('failed to load saved settings');
@@ -335,6 +351,16 @@ function App() {
           <label>model
             <input type='text' value={llmCfg.model} onChange={(e) => setLlmCfg({ ...llmCfg, model: e.target.value })} placeholder={llmCfg.provider === 'openai' ? 'gpt-4.1-mini' : llmCfg.provider === 'gemini' ? 'gemini-1.5-flash' : 'gauss-default'} />
           </label>
+        </div>
+        <h3>Wiki Prompt Template</h3>
+        <div className='grid'>
+          <label>reference
+            <input type='text' value={promptRef} onChange={(e) => setPromptRef(e.target.value)} />
+          </label>
+        </div>
+        <textarea value={buildWikiPrompt()} readOnly rows={12} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={copyPrompt}>Copy Wiki Prompt</button>
         </div>
         <button onClick={saveSettingsAndConnect}>Save Settings & Connect</button>
         <h4>Local backup snapshots</h4>
