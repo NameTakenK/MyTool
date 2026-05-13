@@ -1,16 +1,5 @@
 # Web App (LLM Wiki) 실행 방법
 
-브라우저 기반 Obsidian-like LLM Wiki 클라이언트입니다.
-
-## 기능(MVP)
-- Markdown 문서 선택/렌더링
-- 내부 링크 기반 Backlinks 계산
-- Wiki Search 기반 Q&A (Vector DB 미사용)
-
-## 요구 사항
-- Node.js 20+
-- npm 10+
-
 ## 로컬 실행
 ```bash
 cd apps/web-app
@@ -18,26 +7,13 @@ npm install
 npm run dev
 ```
 
-실행 후 브라우저에서 Vite 기본 주소(보통 `http://localhost:5173`)로 접속합니다.
+## 현재 동작
+- Settings에서 GitHub `owner/repo/branch/token` + `sourcePath/wikiPath/backupPath` 설정
+- 앱 시작 시 자동 동기화(startup sync, server-wins)
+- 수동 `Sync (Server Wins)` 버튼 지원
+- 동기화 전 로컬 스냅샷 백업(메모리) 생성
+- Files 화면에서 source + wiki 폴더 문서 동시 탐색
+- Graph 화면에서 wiki 폴더 대상 링크 그래프(텍스트 MVP) 표시
 
-## 프로덕션 빌드
-```bash
-cd apps/web-app
-npm install
-npm run build
-npm run preview
-```
-
-## 참고
-- 현재 MVP는 샘플 문서 데이터로 동작합니다.
-- 실제 GitHub 동기화/파일시스템 연동은 다음 단계에서 확장됩니다.
-
-
-### UX 안내
-- **입력은 어떻게 하나?**: `Wiki` 탭 중앙의 **Markdown Editor** 텍스트영역에 입력합니다.
-- **어디서 GitHub 셋팅해?**: 상단 `GitHub 설정` 탭에서 Owner/Repo/Branch/Token/WikiPath를 입력합니다.
-- **디자인은?**: 다크 테마 카드형 레이아웃으로 업데이트했습니다.
-
-- Obsidian 룩앤필을 반영한 다크 테마(좌측 Vault, 중앙 Editor/Preview, 우측 Backlinks/Outgoing/Metadata, 하단 Ask 패널)
-
-- 왼쪽 사이드바에서 `Files / Graph / Ask / Settings` 화면 전환 가능
+## 서버 우선 동기화 정책
+- 앱 시작/리로드/수동 Sync 시 서버 데이터를 정본으로 간주하여 로컬 상태를 교체합니다.
