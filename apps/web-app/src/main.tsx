@@ -16,6 +16,7 @@ type LlmConfig = {
   apiKey: string;
   model: string;
 };
+type ConflictItem = { path: string; reason: string };
 type BackupSnapshot = { at: string; docs: Doc[] };
 type GraphNode = { id: string; x: number; y: number };
 
@@ -115,6 +116,7 @@ function App() {
   const [collapsedFolders, setCollapsedFolders] = useState<string[]>([]);
   const [highlightTerm, setHighlightTerm] = useState('');
   const [fileOrder, setFileOrder] = useState<Record<string, number>>({});
+  const [conflicts, setConflicts] = useState<ConflictItem[]>([]);
   const [graphSelected, setGraphSelected] = useState('');
   const didAutoSync = useRef(false);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
@@ -176,17 +178,22 @@ function App() {
           const msg = String(e?.message || '');
           if (!msg.includes('GitHub API 409')) throw e;
           const latest = await ghApi(cfg, doc.path);
-          const retry = await ghApi(cfg, doc.path, {
-            method: 'PUT',
-            body: JSON.stringify({ message: `web: push(retry) ${doc.path}`, content: b64(doc.content), branch: cfg.branch, sha: latest.sha })
-          });
-          setDocs((prev) => prev.map((d) => d.path === doc.path ? { ...d, sha: retry.content?.sha || latest.sha } : d));
+          try {
+            const retry = await ghApi(cfg, doc.path, {
+              method: 'PUT',
+              body: JSON.stringify({ message: `web: push(retry) ${doc.path}`, content: b64(doc.content), branch: cfg.branch, sha: latest.sha })
+            });
+            setDocs((prev) => prev.map((d) => d.path === doc.path ? { ...d, sha: retry.content?.sha || latest.sha } : d));
+          } catch (retryErr: any) {
+            setConflicts((prev) => [...prev.filter((c) => c.path !== doc.path), { path: doc.path, reason: String(retryErr?.message || retryErr) }]);
+          }
         }
       }
       setLocalOnlyPaths([]);
       setStatus(`pushed local changes: ${localDocs.length}`);
       setRefreshEnabled(true);
       await syncFromServer('manual');
+      if (conflicts.length) setStatus(`pushed with conflicts: ${conflicts.length}`);
     } catch (e: any) {
       setStatus(`push failed: ${e.message}`);
     } finally {
@@ -292,6 +299,37 @@ function App() {
     setLocalOnlyPaths((prev) => prev.filter((p) => p !== path));
     if (active === path) setActive(remaining[0]?.path ?? '');
     setStatus(`deleted local file: ${path}`);
+  };
+
+  const resolveConflictUseLocal = async (path: string) => {
+    const doc = docs.find((d) => d.path === path);
+    if (!doc) return;
+    try {
+      const latest = await ghApi(cfg, path);
+      const res = await ghApi(cfg, path, {
+        method: 'PUT',
+        body: JSON.stringify({ message: `web: resolve(local) ${path}`, content: b64(doc.content), branch: cfg.branch, sha: latest.sha })
+      });
+      setDocs((prev) => prev.map((d) => d.path === path ? { ...d, sha: res.content?.sha || latest.sha } : d));
+      setConflicts((prev) => prev.filter((c) => c.path !== path));
+      setStatus(`conflict resolved with local: ${path}`);
+    } catch (e: any) {
+      setStatus(`resolve failed: ${e.message}`);
+    }
+  };
+
+  const resolveConflictUseRemote = async (path: string) => {
+    try {
+      const file = await ghApi(cfg, path);
+      const content = unb64((file.content || '').replace(/\n/g, ''));
+      const zone: 'source' | 'wiki' = path.startsWith(cfg.sourcePath) ? 'source' : 'wiki';
+      setDocs((prev) => prev.map((d) => d.path === path ? { ...d, content, sha: file.sha, zone } : d));
+      setLocalOnlyPaths((prev) => prev.filter((p) => p !== path));
+      setConflicts((prev) => prev.filter((c) => c.path !== path));
+      setStatus(`conflict resolved with remote: ${path}`);
+    } catch (e: any) {
+      setStatus(`resolve failed: ${e.message}`);
+    }
   };
 
   const treeItems = useMemo(() => {
@@ -506,7 +544,9 @@ function App() {
 
       {screen === 'files' && <main className='layout'>
         <aside className='card'><h3>Files</h3>
-          <div className='list'>{treeItems.map((n) => n.isFile ? <div key={n.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><button className={n.path === active ? 'on' : ''} onClick={() => setActive(n.path)} style={{ marginLeft: n.depth * 12 }}>{n.path.split('/').pop()}{localOnlyPaths.includes(n.path) ? ' (local)' : ''}</button><button onClick={() => moveFile(n.path, -1)}>↑</button><button onClick={() => moveFile(n.path, 1)}>↓</button><button onClick={() => renameFile(n.path)}>✏️</button><button onClick={() => deleteLocalFile(n.path)}>🗑</button></div> : <div key={n.path} style={{ marginLeft: n.depth * 12, opacity: 0.9, display: 'flex', gap: 6, alignItems: 'center' }}><button onClick={() => toggleFolder(n.path)}>{collapsedFolders.includes(n.path) ? '📁' : '📂'} {n.path.split('/').pop()}</button><button onClick={() => createFile(n.path)}>+</button></div>)}</div></aside>
+          <div className='list'>{treeItems.map((n) => n.isFile ? <div key={n.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><button className={n.path === active ? 'on' : ''} onClick={() => setActive(n.path)} style={{ marginLeft: n.depth * 12 }}>{n.path.split('/').pop()}{localOnlyPaths.includes(n.path) ? ' (local)' : ''}</button><button onClick={() => moveFile(n.path, -1)}>↑</button><button onClick={() => moveFile(n.path, 1)}>↓</button><button onClick={() => renameFile(n.path)}>✏️</button><button onClick={() => deleteLocalFile(n.path)}>🗑</button></div> : <div key={n.path} style={{ marginLeft: n.depth * 12, opacity: 0.9, display: 'flex', gap: 6, alignItems: 'center' }}><button onClick={() => toggleFolder(n.path)}>{collapsedFolders.includes(n.path) ? '📁' : '📂'} {n.path.split('/').pop()}</button><button onClick={() => createFile(n.path)}>+</button></div>)}</div>
+          {conflicts.length > 0 && <div className='card' style={{ marginTop: 8 }}><h4>Conflicts</h4><ul>{conflicts.map((c) => <li key={c.path}><div>{c.path}</div><small>{c.reason}</small><div style={{ display: 'flex', gap: 6 }}><button onClick={() => resolveConflictUseLocal(c.path)}>Use Local</button><button onClick={() => resolveConflictUseRemote(c.path)}>Use Remote</button></div></li>)}</ul></div>}
+        </aside>
         <section className='card editor'><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea ref={editorRef} value={draftText} onFocus={() => setHighlightTerm('')} onChange={(e) => { setDirty(true); setDraftText(e.target.value); }} /><div style={{ marginBottom: 8 }}><button onClick={saveLocalEdit} disabled={!dirty}>Save Local</button></div><ReactMarkdown>{draftText || ''}</ReactMarkdown></section>
         <aside className='card'><h3>Backlinks</h3><ul>{backlinks.map((b) => <li key={b.path}>{b.path}</li>)}</ul></aside>
       </main>}
