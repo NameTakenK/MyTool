@@ -118,6 +118,9 @@ function App() {
   const [fileOrder, setFileOrder] = useState<Record<string, number>>({});
   const [conflicts, setConflicts] = useState<ConflictItem[]>([]);
   const [graphSelected, setGraphSelected] = useState('');
+  const [leftPaneW, setLeftPaneW] = useState(320);
+  const [rightPaneW, setRightPaneW] = useState(280);
+  const [dragging, setDragging] = useState<null | 'left' | 'right'>(null);
   const didAutoSync = useRef(false);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -370,6 +373,23 @@ function App() {
   };
 
   useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging) return;
+      const x = e.clientX;
+      const ww = window.innerWidth;
+      if (dragging === 'left') setLeftPaneW(Math.max(220, Math.min(520, x - 90)));
+      if (dragging === 'right') setRightPaneW(Math.max(220, Math.min(520, ww - x - 40)));
+    };
+    const onUp = () => setDragging(null);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [dragging]);
+
+  useEffect(() => {
     const raw = localStorage.getItem(CFG_KEY);
     if (!raw) {
       setCfgLoaded(true);
@@ -542,13 +562,15 @@ function App() {
 
       {screen === 'askSearch' && <section className='card ask-only'><h3>Ask & Search</h3><p>검색 + LLM 답변(선택 provider) 지원</p><input value={question} onChange={(e) => { setQuestion(e.target.value); }} placeholder='질문/키워드 입력' /><div style={{ marginTop: 8, marginBottom: 8, display: 'flex', gap: 8 }}><button onClick={ask}>Search in Docs</button><button onClick={askWithLlm}>Ask LLM</button></div><pre>{question ? 'Search 또는 Ask LLM 버튼을 눌러 결과를 확인하세요.' : '질문을 입력하세요.'}</pre><h4>검색 결과</h4><ul>{askMatches.map((d) => <li key={d.path}><button onClick={() => { setHighlightTerm(question); setActive(d.path); setScreen('files'); }}>{d.path}</button></li>)}</ul></section>}
 
-      {screen === 'files' && <main className='layout'>
-        <aside className='card'><h3>Files</h3>
+      {screen === 'files' && <main className='layout' style={{ display: 'flex', gap: 8 }}>
+        <aside className='card' style={{ width: leftPaneW, minWidth: 220, maxWidth: 520 }}><h3>Files</h3>
           <div className='list'>{treeItems.map((n) => n.isFile ? <div key={n.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><button className={n.path === active ? 'on' : ''} onClick={() => setActive(n.path)} style={{ marginLeft: n.depth * 12 }}>{n.path.split('/').pop()}{localOnlyPaths.includes(n.path) ? ' (local)' : ''}</button><button onClick={() => moveFile(n.path, -1)}>↑</button><button onClick={() => moveFile(n.path, 1)}>↓</button><button onClick={() => renameFile(n.path)}>✏️</button><button onClick={() => deleteLocalFile(n.path)}>🗑</button></div> : <div key={n.path} style={{ marginLeft: n.depth * 12, opacity: 0.9, display: 'flex', gap: 6, alignItems: 'center' }}><button onClick={() => toggleFolder(n.path)}>{collapsedFolders.includes(n.path) ? '📁' : '📂'} {n.path.split('/').pop()}</button><button onClick={() => createFile(n.path)}>+</button></div>)}</div>
           {conflicts.length > 0 && <div className='card' style={{ marginTop: 8 }}><h4>Conflicts</h4><ul>{conflicts.map((c) => <li key={c.path}><div>{c.path}</div><small>{c.reason}</small><div style={{ display: 'flex', gap: 6 }}><button onClick={() => resolveConflictUseLocal(c.path)}>Use Local</button><button onClick={() => resolveConflictUseRemote(c.path)}>Use Remote</button></div></li>)}</ul></div>}
         </aside>
-        <section className='card editor'><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea ref={editorRef} value={draftText} onFocus={() => setHighlightTerm('')} onChange={(e) => { setDirty(true); setDraftText(e.target.value); }} /><div style={{ marginBottom: 8 }}><button onClick={saveLocalEdit} disabled={!dirty}>Save Local</button></div><ReactMarkdown>{draftText || ''}</ReactMarkdown></section>
-        <aside className='card'><h3>Backlinks</h3><ul>{backlinks.map((b) => <li key={b.path}>{b.path}</li>)}</ul></aside>
+        <div onMouseDown={() => setDragging('left')} style={{ width: 6, cursor: 'col-resize', background: '#333', borderRadius: 4 }} />
+        <section className='card editor' style={{ flex: 1 }}><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea ref={editorRef} value={draftText} onFocus={() => setHighlightTerm('')} onChange={(e) => { setDirty(true); setDraftText(e.target.value); }} /><div style={{ marginBottom: 8 }}><button onClick={saveLocalEdit} disabled={!dirty}>Save Local</button></div><ReactMarkdown>{draftText || ''}</ReactMarkdown></section>
+        <div onMouseDown={() => setDragging('right')} style={{ width: 6, cursor: 'col-resize', background: '#333', borderRadius: 4 }} />
+        <aside className='card' style={{ width: rightPaneW, minWidth: 220, maxWidth: 520 }}><h3>Backlinks</h3><ul>{backlinks.map((b) => <li key={b.path}>{b.path}</li>)}</ul></aside>
       </main>}
     </section>
   </div>;
