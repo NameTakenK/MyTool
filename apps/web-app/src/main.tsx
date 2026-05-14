@@ -115,6 +115,7 @@ function App() {
   const [collapsedFolders, setCollapsedFolders] = useState<string[]>([]);
   const [highlightTerm, setHighlightTerm] = useState('');
   const [fileOrder, setFileOrder] = useState<Record<string, number>>({});
+  const [graphSelected, setGraphSelected] = useState('');
   const didAutoSync = useRef(false);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -434,6 +435,8 @@ function App() {
     }).filter(Boolean) as { from: GraphNode; to: GraphNode }[];
   });
 
+  const graphSelectedDoc = docs.find((d) => d.path === graphSelected);
+
   return <div className='app'>
     <aside className='left-nav'>
       <h2>LLM Wiki (Web)</h2>
@@ -486,11 +489,17 @@ function App() {
 
       {screen === 'graph' && <section className='card graph'>
         <h3>Wiki Graph</h3>
-        <p>텍스트 목록이 아니라 노드/엣지 형태로 표시합니다.</p>
-        <svg width='520' height='460'>
-          {graphEdges.map((e, i) => <line key={`e-${i}`} x1={e.from.x} y1={e.from.y} x2={e.to.x} y2={e.to.y} stroke='#999' />)}
-          {graphNodes.map((n) => <g key={n.id}><circle cx={n.x} cy={n.y} r='18' fill='#4f46e5' /><text x={n.x + 22} y={n.y + 4} fill='#ddd' fontSize='12'>{n.id.split('/').pop()}</text></g>)}
-        </svg>
+        <p>노드를 클릭하면 오른쪽에 해당 문서 내용이 표시됩니다.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
+          <svg width='620' height='520'>
+            {graphEdges.map((e, i) => <line key={`e-${i}`} x1={e.from.x} y1={e.from.y} x2={e.to.x} y2={e.to.y} stroke='#777' />)}
+            {graphNodes.map((n) => <g key={n.id} onClick={() => setGraphSelected(n.id)} style={{ cursor: 'pointer' }}><circle cx={n.x} cy={n.y} r={graphSelected === n.id ? '22' : '18'} fill={graphSelected === n.id ? '#22c55e' : '#4f46e5'} /><text x={n.x + 22} y={n.y + 4} fill='#ddd' fontSize='12'>{n.id.split('/').pop()}</text></g>)}
+          </svg>
+          <aside className='card'>
+            <h4>{graphSelectedDoc?.path || '선택된 노드 없음'}</h4>
+            <ReactMarkdown>{graphSelectedDoc?.content || '그래프 노드를 클릭하면 문서 내용이 여기에 표시됩니다.'}</ReactMarkdown>
+          </aside>
+        </div>
       </section>}
 
       {screen === 'askSearch' && <section className='card ask-only'><h3>Ask & Search</h3><p>검색 + LLM 답변(선택 provider) 지원</p><input value={question} onChange={(e) => { setQuestion(e.target.value); }} placeholder='질문/키워드 입력' /><div style={{ marginTop: 8, marginBottom: 8, display: 'flex', gap: 8 }}><button onClick={ask}>Search in Docs</button><button onClick={askWithLlm}>Ask LLM</button></div><pre>{question ? 'Search 또는 Ask LLM 버튼을 눌러 결과를 확인하세요.' : '질문을 입력하세요.'}</pre><h4>검색 결과</h4><ul>{askMatches.map((d) => <li key={d.path}><button onClick={() => { setHighlightTerm(question); setActive(d.path); setScreen('files'); }}>{d.path}</button></li>)}</ul></section>}
