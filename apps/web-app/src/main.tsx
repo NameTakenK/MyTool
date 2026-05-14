@@ -44,6 +44,9 @@ function App() {
   const [fileOrder, setFileOrder] = useState<Record<string, number>>({});
   const [conflicts, setConflicts] = useState<ConflictItem[]>([]);
   const [graphSelected, setGraphSelected] = useState('');
+  const [graphPan, setGraphPan] = useState({ x: 0, y: 0 });
+  const [graphDragging, setGraphDragging] = useState(false);
+  const [graphDragStart, setGraphDragStart] = useState({ x: 0, y: 0 });
   const [leftPaneW, setLeftPaneW] = useState(320);
   const [rightPaneW, setRightPaneW] = useState(280);
   const [dragging, setDragging] = useState<null | 'left' | 'right'>(null);
@@ -421,6 +424,17 @@ function App() {
 
   const graphSelectedDoc = docs.find((d) => d.path === graphSelected);
 
+  const onGraphMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    if ((e.target as Element).tagName.toLowerCase() !== 'svg') return;
+    setGraphDragging(true);
+    setGraphDragStart({ x: e.clientX - graphPan.x, y: e.clientY - graphPan.y });
+  };
+  const onGraphMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!graphDragging) return;
+    setGraphPan({ x: e.clientX - graphDragStart.x, y: e.clientY - graphDragStart.y });
+  };
+  const onGraphMouseUp = () => setGraphDragging(false);
+
   return <div className='app'>
     <aside className='left-nav'>
       <h2>LLM Wiki (Web)</h2>
@@ -473,16 +487,18 @@ function App() {
 
       {screen === 'graph' && <section className='card graph'>
         <h3>Wiki Graph</h3>
-        <p>노드를 클릭하면 오른쪽에 해당 문서 내용이 표시됩니다.</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
-          <svg width='620' height='520'>
-            {graphEdges.map((e, i) => <line key={`e-${i}`} x1={e.from.x} y1={e.from.y} x2={e.to.x} y2={e.to.y} stroke='#777' />)}
-            {graphNodes.map((n) => <g key={n.id} onClick={() => setGraphSelected(n.id)} style={{ cursor: 'pointer' }}><circle cx={n.x} cy={n.y} r={graphSelected === n.id ? '22' : '18'} fill={graphSelected === n.id ? '#22c55e' : '#4f46e5'} /><text x={n.x + 22} y={n.y + 4} fill='#ddd' fontSize='12'>{n.id.split('/').pop()}</text></g>)}
+        <p>빈 공간 드래그로 그래프를 이동할 수 있습니다.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: graphSelectedDoc ? '1.2fr 1fr' : '1fr', gap: 12 }}>
+          <svg width='620' height='520' onMouseDown={onGraphMouseDown} onMouseMove={onGraphMouseMove} onMouseUp={onGraphMouseUp} onMouseLeave={onGraphMouseUp}>
+            <g transform={`translate(${graphPan.x}, ${graphPan.y})`}>
+              {graphEdges.map((e, i) => <line key={`e-${i}`} x1={e.from.x} y1={e.from.y} x2={e.to.x} y2={e.to.y} stroke='#777' />)}
+              {graphNodes.map((n) => <g key={n.id} onClick={() => setGraphSelected(n.id)} style={{ cursor: 'pointer' }}><circle cx={n.x} cy={n.y} r={graphSelected === n.id ? '22' : '18'} fill={graphSelected === n.id ? '#22c55e' : '#4f46e5'} /><text x={n.x + 22} y={n.y + 4} fill='#ddd' fontSize='12'>{n.id.split('/').pop()}</text></g>)}
+            </g>
           </svg>
-          <aside className='card'>
-            <h4>{graphSelectedDoc?.path || '선택된 노드 없음'}</h4>
-            <ReactMarkdown>{graphSelectedDoc?.content || '그래프 노드를 클릭하면 문서 내용이 여기에 표시됩니다.'}</ReactMarkdown>
-          </aside>
+          {graphSelectedDoc && <aside className='card'>
+            <h4>{graphSelectedDoc.path}</h4>
+            <ReactMarkdown>{graphSelectedDoc.content}</ReactMarkdown>
+          </aside>}
         </div>
       </section>}
 
