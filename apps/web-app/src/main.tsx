@@ -112,12 +112,17 @@ function App() {
   });
   const [llmCfg, setLlmCfg] = useState<LlmConfig>({ provider: 'openai', apiKey: '', model: 'gpt-4.1-mini' });
   const [promptRef, setPromptRef] = useState('https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f');
+  const [collapsedFolders, setCollapsedFolders] = useState<string[]>([]);
+  const [highlightTerm, setHighlightTerm] = useState('');
+  const [fileOrder, setFileOrder] = useState<Record<string, number>>({});
   const didAutoSync = useRef(false);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
 
   const activeDoc = docs.find((d) => d.path === active) ?? docs[0];
   const backlinks = useMemo(() => docs.filter((d) => d.path !== active && parseLinks(d.content).some((l) => active.includes(l.replace('./', '')))), [docs, active]);
 
   const syncFromServer = async (trigger: 'startup' | 'manual') => {
+    if (trigger === 'manual' && !window.confirm('Refresh from server now?')) return;
     if (!cfg.host || !cfg.owner || !cfg.repo || !cfg.token) {
       setConnected(false);
       setStatus('config required: host/owner/repo/token');
@@ -153,6 +158,7 @@ function App() {
   };
 
   const pushLocalToServer = async () => {
+    if (!window.confirm('Push local changes to server now?')) return;
     if (!connected) return setStatus('connect first');
     const localDocs = docs.filter((d) => localOnlyPaths.includes(d.path));
     if (!localDocs.length) return setStatus('no local changes to push');
@@ -290,7 +296,7 @@ function App() {
   const treeItems = useMemo(() => {
     const out: { path: string; depth: number; isFile: boolean }[] = [];
     const dirs = new Set<string>();
-    const files = [...docs].map((d) => d.path).sort();
+    const files = [...docs].map((d) => d.path).sort((a, b) => (fileOrder[a] ?? 999999) - (fileOrder[b] ?? 999999) || a.localeCompare(b));
     for (const file of files) {
       const parts = file.split('/');
       let cur = '';
@@ -301,10 +307,28 @@ function App() {
           out.push({ path: cur, depth: i, isFile: false });
         }
       });
-      out.push({ path: file, depth: parts.length - 1, isFile: true });
+      const hiddenByParent = parts.slice(0, -1).some((_, i) => collapsedFolders.includes(parts.slice(0, i + 1).join('/')));
+      if (!hiddenByParent) out.push({ path: file, depth: parts.length - 1, isFile: true });
     }
     return out;
-  }, [docs]);
+  }, [docs, collapsedFolders, fileOrder]);
+
+  const toggleFolder = (path: string) => setCollapsedFolders((prev) => prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]);
+
+  const moveFile = (path: string, dir: -1 | 1) => {
+    const files = treeItems.filter((n) => n.isFile).map((n) => n.path);
+    const idx = files.indexOf(path);
+    const next = idx + dir;
+    if (idx < 0 || next < 0 || next >= files.length) return;
+    const a = files[idx], b = files[next];
+    setFileOrder((prev) => {
+      const p = { ...prev };
+      const oa = p[a] ?? idx;
+      const ob = p[b] ?? next;
+      p[a] = ob; p[b] = oa;
+      return p;
+    });
+  };
 
   useEffect(() => {
     const raw = localStorage.getItem(CFG_KEY);
@@ -361,6 +385,15 @@ function App() {
   }, [active]);
 
   useEffect(() => {
+    if (!highlightTerm || !editorRef.current || !activeDoc) return;
+    const i = activeDoc.content.toLowerCase().indexOf(highlightTerm.toLowerCase());
+    if (i < 0) return;
+    editorRef.current.focus();
+    editorRef.current.setSelectionRange(i, i + highlightTerm.length);
+    editorRef.current.scrollTop = Math.max(0, (i / Math.max(activeDoc.content.length, 1)) * editorRef.current.scrollHeight - 80);
+  }, [active, highlightTerm, activeDoc?.content]);
+
+  useEffect(() => {
     if (localOnlyPaths.length > 0) setRefreshEnabled(true);
   }, [localOnlyPaths.length]);
 
@@ -384,9 +417,10 @@ function App() {
   };
 
 
-  const graphNodes: GraphNode[] = docs.filter((d) => d.zone === 'wiki').map((d, i, arr) => {
-    const angle = (2 * Math.PI * i) / Math.max(arr.length, 1);
-    return { id: d.path, x: 250 + Math.cos(angle) * 180, y: 220 + Math.sin(angle) * 180 };
+  const graphNodes: GraphNode[] = docs.filter((d) => d.zone === 'wiki').map((d, i) => {
+    const angle = i * 0.55;
+    const r = 80 + i * 10;
+    return { id: d.path, x: 280 + Math.cos(angle) * r, y: 240 + Math.sin(angle) * r };
   });
 
   const graphByName = new Map(graphNodes.map((n) => [n.id.split('/').pop()?.replace('.md', ''), n]));
@@ -404,9 +438,11 @@ function App() {
     <aside className='left-nav'>
       <h2>LLM Wiki (Web)</h2>
       {(['files', 'graph', 'askSearch', 'settings'] as Screen[]).map((s) => <button key={s} className={screen === s ? 'on' : ''} onClick={() => setScreen(s)}>{s === 'askSearch' ? 'ask & search' : s}</button>)}
-      <button onClick={() => syncFromServer('manual')} disabled={!refreshEnabled || isRefreshing}>{isRefreshing ? 'Refreshing...' : 'Refresh from Server'}</button>
-      <button onClick={pushLocalToServer} disabled={localOnlyPaths.length === 0 || isPushing}>{isPushing ? 'Pushing...' : 'Push Local → Server'}</button>
       <small>{status}</small>
+      <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <button onClick={() => syncFromServer('manual')} disabled={!refreshEnabled || isRefreshing}>{isRefreshing ? 'Refreshing...' : 'Refresh from Server'}</button>
+        <button onClick={pushLocalToServer} disabled={localOnlyPaths.length === 0 || isPushing}>{isPushing ? 'Pushing...' : 'Push Local → Server'}</button>
+      </div>
     </aside>
 
     <section className='content'>
@@ -457,12 +493,12 @@ function App() {
         </svg>
       </section>}
 
-      {screen === 'askSearch' && <section className='card ask-only'><h3>Ask & Search</h3><p>검색 + LLM 답변(선택 provider) 지원</p><input value={question} onChange={(e) => { setQuestion(e.target.value); }} placeholder='질문/키워드 입력' /><div style={{ marginTop: 8, marginBottom: 8, display: 'flex', gap: 8 }}><button onClick={ask}>Search in Docs</button><button onClick={askWithLlm}>Ask LLM</button></div><pre>{question ? 'Search 또는 Ask LLM 버튼을 눌러 결과를 확인하세요.' : '질문을 입력하세요.'}</pre><h4>검색 결과</h4><ul>{askMatches.map((d) => <li key={d.path}><button onClick={() => { setActive(d.path); setScreen('files'); }}>{d.path}</button></li>)}</ul></section>}
+      {screen === 'askSearch' && <section className='card ask-only'><h3>Ask & Search</h3><p>검색 + LLM 답변(선택 provider) 지원</p><input value={question} onChange={(e) => { setQuestion(e.target.value); }} placeholder='질문/키워드 입력' /><div style={{ marginTop: 8, marginBottom: 8, display: 'flex', gap: 8 }}><button onClick={ask}>Search in Docs</button><button onClick={askWithLlm}>Ask LLM</button></div><pre>{question ? 'Search 또는 Ask LLM 버튼을 눌러 결과를 확인하세요.' : '질문을 입력하세요.'}</pre><h4>검색 결과</h4><ul>{askMatches.map((d) => <li key={d.path}><button onClick={() => { setHighlightTerm(question); setActive(d.path); setScreen('files'); }}>{d.path}</button></li>)}</ul></section>}
 
       {screen === 'files' && <main className='layout'>
         <aside className='card'><h3>Files</h3>
-          <div className='list'>{treeItems.map((n) => n.isFile ? <div key={n.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><button className={n.path === active ? 'on' : ''} onClick={() => setActive(n.path)} style={{ marginLeft: n.depth * 12 }}>{n.path.split('/').pop()}{localOnlyPaths.includes(n.path) ? ' (local)' : ''}</button><button onClick={() => renameFile(n.path)}>✏️</button><button onClick={() => deleteLocalFile(n.path)}>🗑</button></div> : <div key={n.path} style={{ marginLeft: n.depth * 12, opacity: 0.9, display: 'flex', gap: 6, alignItems: 'center' }}><button onClick={() => createFile(n.path)}>📁 {n.path.split('/').pop()}</button><button onClick={() => createFile(n.path)}>+</button></div>)}</div></aside>
-        <section className='card editor'><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea value={draftText} onChange={(e) => { setDirty(true); setDraftText(e.target.value); }} /><div style={{ marginBottom: 8 }}><button onClick={saveLocalEdit} disabled={!dirty}>Save Local</button></div><ReactMarkdown>{draftText || ''}</ReactMarkdown></section>
+          <div className='list'>{treeItems.map((n) => n.isFile ? <div key={n.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><button className={n.path === active ? 'on' : ''} onClick={() => setActive(n.path)} style={{ marginLeft: n.depth * 12 }}>{n.path.split('/').pop()}{localOnlyPaths.includes(n.path) ? ' (local)' : ''}</button><button onClick={() => moveFile(n.path, -1)}>↑</button><button onClick={() => moveFile(n.path, 1)}>↓</button><button onClick={() => renameFile(n.path)}>✏️</button><button onClick={() => deleteLocalFile(n.path)}>🗑</button></div> : <div key={n.path} style={{ marginLeft: n.depth * 12, opacity: 0.9, display: 'flex', gap: 6, alignItems: 'center' }}><button onClick={() => toggleFolder(n.path)}>{collapsedFolders.includes(n.path) ? '📁' : '📂'} {n.path.split('/').pop()}</button><button onClick={() => createFile(n.path)}>+</button></div>)}</div></aside>
+        <section className='card editor'><h3>{activeDoc?.path || '선택된 파일 없음'} {dirty ? '*' : ''}</h3><textarea ref={editorRef} value={draftText} onFocus={() => setHighlightTerm('')} onChange={(e) => { setDirty(true); setDraftText(e.target.value); }} /><div style={{ marginBottom: 8 }}><button onClick={saveLocalEdit} disabled={!dirty}>Save Local</button></div><ReactMarkdown>{draftText || ''}</ReactMarkdown></section>
         <aside className='card'><h3>Backlinks</h3><ul>{backlinks.map((b) => <li key={b.path}>{b.path}</li>)}</ul></aside>
       </main>}
     </section>
